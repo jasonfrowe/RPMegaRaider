@@ -5,11 +5,29 @@ add_subdirectory(tools)
 set(LLVM_MOS_PLATFORM rp6502)
 find_package(llvm-mos-sdk REQUIRED)
 
-project(MY-RP6502-PROJECT C CXX ASM)
+project(RPMegaRaider C CXX ASM)
 
-add_executable(hello)
-rp6502_asset(hello help src/help.txt)
-rp6502_executable(hello DATA file RESET file)
-target_sources(hello PRIVATE
+# Define the option (Default is ON/Native) 
+option(USE_NATIVE_OPL2 "Use the RIA native OPL2 support" ON)
+
+if(USE_NATIVE_OPL2)
+    add_definitions(-DUSE_NATIVE_OPL2)
+    message(STATUS "Targeting: Native RIA OPL2")
+else()
+    message(STATUS "Targeting: FPGA TinyFPGA Sound Card")
+endif()
+
+add_executable(RPMegaRaider)
+rp6502_asset(RPMegaRaider 0x10000 images/RunningMan.bin)
+rp6502_asset(RPMegaRaider help src/help.txt)
+
+rp6502_executable(RPMegaRaider 
+    DATA file 
+    RESET file
+)
+
+target_sources(RPMegaRaider PRIVATE
     src/main.c
+    src/input.c
+    src/runningman.c
 )
