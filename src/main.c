@@ -28,8 +28,8 @@ static void init_graphics(void)
 
     RUNNING_MAN_CONFIG = SPRITE_DATA_END; // Set the configuration address to the end of sprite data
 
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, SCREEN_HALF_WIDTH);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, SCREEN_HALF_HEIGHT);
+    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, PLAYER_START_X);
+    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, PLAYER_START_Y);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, xram_sprite_ptr, RUNNING_MAN_DATA);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, log_size, 4); // 16x16 pixels (2^4 = 16)
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, has_opacity_metadata, false);

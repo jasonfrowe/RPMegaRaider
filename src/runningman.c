@@ -20,7 +20,7 @@
 #define ACCEL       1
 #define DECEL       1
 #define MAX_VEL     8    // 2 px/frame max speed (scaled for 16x16 sprite)
-#define DECEL_RATE  4    // apply decel every Nth vsync (higher = more momentum)
+#define DECEL_RATE  3    // apply decel every Nth vsync (higher = more momentum)
 
 // Animation ticks/frame indexed by abs_vel >> 2 (0..4); lower = faster
 static const uint8_t anim_ticks_table[5] = { 15, 5, 3, 2, 1 };
@@ -58,10 +58,10 @@ static void set_frame(uint8_t f)
 
 void runningman_init(void)
 {
-    x_pos            = SCREEN_HALF_WIDTH;
+    x_pos            = PLAYER_START_X;
     x_frac           = 0;
     x_vel            = 0;
-    ground_y         = SCREEN_HALF_HEIGHT;
+    ground_y         = PLAYER_START_Y;
     anim_tick        = 0;
     current_frame    = FRAME_IDLE_START;
     jumping          = false;
