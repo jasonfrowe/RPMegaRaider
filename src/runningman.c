@@ -5,13 +5,9 @@
 #include "input.h"
 #include "runningman.h"
 
-#define FRAME_SIZE      (32u * 32u * 2u)  // 2048 bytes per 32x32 16bpp frame
-#define ANIM_TICKS      6u                // ~10 fps at 60 Hz vsync
-#define SPEED           2                 // pixels per frame (ground)
-#define JUMP_SPEED      4                 // pixels per frame (airborne)
-#define SPRITE_W        32
+#define FRAME_SIZE      (16u * 16u * 2u)
+#define SPRITE_W        16
 
-// Frame ranges for each direction
 #define FRAME_LEFT_START   0u
 #define FRAME_LEFT_END     5u
 #define FRAME_IDLE_START   6u
@@ -19,18 +15,39 @@
 #define FRAME_RIGHT_START  12u
 #define FRAME_RIGHT_END    17u
 
-// Jump arc: y offset (pixels up from ground) for each of the 6 anim steps.
-// 6 steps matches one full walk cycle. All values fit in uint8_t.
-#define JUMP_FRAMES 6u
-static const uint8_t jump_arc[JUMP_FRAMES] = { 12, 32, 44, 44, 28, 8 };
+// Velocity in quarter-pixels/frame; range -MAX_VEL..+MAX_VEL
+// Pressing a direction applies ACCEL; releasing applies DECEL (friction/momentum)
+#define ACCEL       1
+#define DECEL       1
+#define MAX_VEL     8    // 2 px/frame max speed (scaled for 16x16 sprite)
+#define DECEL_RATE  4    // apply decel every Nth vsync (higher = more momentum)
 
+// Animation ticks/frame indexed by abs_vel >> 2 (0..4); lower = faster
+static const uint8_t anim_ticks_table[5] = { 15, 5, 3, 2, 1 };
+
+// Jump arc: y offset above ground (pixels) for each of JUMP_TOTAL vsync frames.
+// Advances every vsync so vertical motion is always smooth regardless of anim speed.
+#define JUMP_TOTAL 36u
+static const uint8_t jump_arc[JUMP_TOTAL] = {
+     4,  8, 13, 18, 23, 28, 32, 36, 39, 41,
+    43, 44, 45, 46, 46, 46, 46, 45, 44, 43,
+    41, 39, 36, 33, 29, 25, 21, 17, 14, 11,
+     8,  6,  4,  3,  2,  1
+};
+
+static int16_t  x_pos;
+static uint8_t  x_frac;           // sub-pixel accumulator (0..3 quarter-pixels)
+static int8_t   x_vel;            // velocity (quarter-pixels/frame)
+static int16_t  ground_y;
 static uint8_t  anim_tick;
 static uint8_t  current_frame;
-static int16_t  x_pos;
-static int16_t  ground_y;
+static uint8_t  jump_tick;        // vsync counter for arc lookup
 static bool     jumping;
-static uint8_t  jump_index;
+static uint8_t  jump_range_start; // animation range locked at jump start
+static uint8_t  jump_range_end;
 static bool     jump_btn_prev;
+static int8_t   last_dir;         // -1=was going left, 1=was going right
+static uint8_t  decel_tick;       // rate-limits friction for longer coast
 
 static void set_frame(uint8_t f)
 {
@@ -41,13 +58,19 @@ static void set_frame(uint8_t f)
 
 void runningman_init(void)
 {
-    anim_tick     = 0;
-    current_frame = FRAME_IDLE_START;
-    x_pos         = SCREEN_HALF_WIDTH;
-    ground_y      = SCREEN_HALF_HEIGHT;
-    jumping       = false;
-    jump_index    = 0;
-    jump_btn_prev = false;
+    x_pos            = SCREEN_HALF_WIDTH;
+    x_frac           = 0;
+    x_vel            = 0;
+    ground_y         = SCREEN_HALF_HEIGHT;
+    anim_tick        = 0;
+    current_frame    = FRAME_IDLE_START;
+    jumping          = false;
+    jump_tick        = 0;
+    jump_range_start = FRAME_IDLE_START;
+    jump_range_end   = FRAME_IDLE_END;
+    jump_btn_prev    = false;
+    last_dir         = 0;
+    decel_tick       = 0;
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, ground_y);
     set_frame(FRAME_IDLE_START);
@@ -59,71 +82,126 @@ void runningman_update(void)
     bool right    = is_action_pressed(0, ACTION_ROTATE_RIGHT);
     bool jump_btn = is_action_pressed(0, ACTION_SUPER_FIRE);
 
-    // Trigger jump on button-press edge, only when grounded
+    // Trigger jump (edge detect, grounded only); lock anim range at current velocity
     if (jump_btn && !jump_btn_prev && !jumping) {
-        jumping    = true;
-        jump_index = 0;
+        jumping   = true;
+        jump_tick = 0;
+        if (x_vel < -2) {
+            jump_range_start = FRAME_LEFT_START;
+            jump_range_end   = FRAME_LEFT_END;
+        } else if (x_vel > 2) {
+            jump_range_start = FRAME_RIGHT_START;
+            jump_range_end   = FRAME_RIGHT_END;
+        } else {
+            jump_range_start = FRAME_IDLE_START;
+            jump_range_end   = FRAME_IDLE_END;
+        }
     }
     jump_btn_prev = jump_btn;
 
-    // Determine animation range and move horizontally (allowed during jump too)
-    uint8_t range_start, range_end;
-    uint8_t speed = jumping ? JUMP_SPEED : SPEED;
+    // Accelerate / decelerate (air control unchanged for natural jump carry-through)
     if (left && !right) {
-        range_start = FRAME_LEFT_START;
-        range_end   = FRAME_LEFT_END;
-        x_pos -= speed;
-        if (x_pos < 0) x_pos = 0;
-        xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
+        decel_tick = 0;
+        x_vel -= ACCEL;
+        if (x_vel < -(int8_t)MAX_VEL) x_vel = -(int8_t)MAX_VEL;
     } else if (right && !left) {
-        range_start = FRAME_RIGHT_START;
-        range_end   = FRAME_RIGHT_END;
-        x_pos += speed;
-        if (x_pos > SCREEN_WIDTH - SPRITE_W) x_pos = SCREEN_WIDTH - SPRITE_W;
-        xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
+        decel_tick = 0;
+        x_vel += ACCEL;
+        if (x_vel > (int8_t)MAX_VEL) x_vel = (int8_t)MAX_VEL;
     } else {
-        range_start = FRAME_IDLE_START;
-        range_end   = FRAME_IDLE_END;
+        // Friction toward zero — only applied every DECEL_RATE frames for momentum
+        if (++decel_tick >= DECEL_RATE) {
+            decel_tick = 0;
+            if      (x_vel > 0) { x_vel -= DECEL; if (x_vel < 0) x_vel = 0; }
+            else if (x_vel < 0) { x_vel += DECEL; if (x_vel > 0) x_vel = 0; }
+        }
     }
 
-    // Apply arc y-offset every vsync while airborne
+    // Apply velocity to position: quarter-pixel fixed point, all 8/16-bit ops
+    if (x_vel > 0) {
+        x_frac += (uint8_t)x_vel;
+        x_pos  += (int16_t)(x_frac >> 2);
+        x_frac  &= 3u;
+        if (x_pos > SCREEN_WIDTH - SPRITE_W) { x_pos = SCREEN_WIDTH - SPRITE_W; x_vel = 0; x_frac = 0; }
+    } else if (x_vel < 0) {
+        x_frac += (uint8_t)(-x_vel);
+        x_pos  -= (int16_t)(x_frac >> 2);
+        x_frac  &= 3u;
+        if (x_pos < 0) { x_pos = 0; x_vel = 0; x_frac = 0; }
+    }
+    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
+
+    // Smooth jump arc: update y every vsync from lookup table
     if (jumping) {
-        int16_t y = ground_y - (int16_t)jump_arc[jump_index];
+        int16_t y = ground_y - (int16_t)jump_arc[jump_tick];
         xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, y);
+        if (++jump_tick >= JUMP_TOTAL) {
+            jumping = false;
+            xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, ground_y);
+        }
     }
 
-    // Advance animation on tick
-    if (++anim_tick >= ANIM_TICKS) {
+    // Track last significant direction (don't update while coasting through slow zone)
+    if      (x_vel < -2) last_dir = -1;
+    else if (x_vel >  2) last_dir =  1;
+
+    // Animation speed from velocity magnitude (abs_vel >> 2 = table index)
+    uint8_t abs_vel = (x_vel < 0) ? (uint8_t)(-x_vel) : (uint8_t)x_vel;
+    uint8_t tbl_idx = abs_vel >> 2;
+    if (tbl_idx > 4u) tbl_idx = 4u;
+    uint8_t anim_ticks = anim_ticks_table[tbl_idx];
+
+    // Decel frames: driven directly by abs_vel each vsync — no tick needed.
+    // abs_vel==2: first decel frame (6 left / 11 right)
+    // abs_vel==1: second decel frame (7 left / 10 right)
+    if (!jumping && !left && !right && x_vel != 0) {
+        uint8_t decel_frame = (last_dir < 0)
+            ? ((abs_vel >= 2u) ? 6u : 7u)
+            : ((abs_vel >= 2u) ? 11u : 10u);
+        if (current_frame != decel_frame) set_frame(decel_frame);
+    }
+
+    // Tick-driven animation: run cycles, idle breathing, and jump
+    if (++anim_tick >= anim_ticks) {
         anim_tick = 0;
 
         if (jumping) {
-            if (range_start == FRAME_IDLE_START) {
-                // Idle jump: frame 6 on the way up, frame 11 on the way down
-                set_frame(jump_index < JUMP_FRAMES / 2 ? FRAME_IDLE_START : FRAME_IDLE_END);
+            if (jump_range_start == FRAME_IDLE_START) {
+                // Standing jump: frame 6 ascending, frame 11 descending
+                set_frame(jump_tick < JUMP_TOTAL / 2u ? FRAME_IDLE_START : FRAME_IDLE_END);
             } else {
-                // Directional jump: walk through the directional frames once
-                if (current_frame < range_start || current_frame > range_end)
-                    current_frame = range_start;
-                else if (current_frame < range_end)
+                uint8_t r_start = jump_range_start;
+                uint8_t r_end   = jump_range_end;
+                if (current_frame < r_start || current_frame > r_end)
+                    current_frame = r_start;
+                else if (current_frame < r_end)
                     ++current_frame;
                 else
-                    current_frame = range_start;
+                    current_frame = r_start;
                 set_frame(current_frame);
             }
-
-            if (++jump_index >= JUMP_FRAMES) {
-                jumping = false;
-                xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, ground_y);
-            }
-        } else {
-            // Normal ground animation
-            if (current_frame < range_start || current_frame > range_end)
-                current_frame = range_start;
-            else if (current_frame < range_end)
+        } else if (left && !right) {
+            // Running left: cycle frames 0-5
+            if (current_frame < FRAME_LEFT_START || current_frame > FRAME_LEFT_END)
+                current_frame = FRAME_LEFT_START;
+            else if (current_frame < FRAME_LEFT_END)
                 ++current_frame;
             else
-                current_frame = range_start;
+                current_frame = FRAME_LEFT_START;
             set_frame(current_frame);
+        } else if (right && !left) {
+            // Running right: cycle frames 12-17
+            if (current_frame < FRAME_RIGHT_START || current_frame > FRAME_RIGHT_END)
+                current_frame = FRAME_RIGHT_START;
+            else if (current_frame < FRAME_RIGHT_END)
+                ++current_frame;
+            else
+                current_frame = FRAME_RIGHT_START;
+            set_frame(current_frame);
+        } else if (x_vel == 0) {
+            // Fully stopped: alternate frames 8 and 9
+            set_frame((current_frame == 8u) ? 9u : 8u);
         }
+        // decel case (x_vel != 0, no input) is handled above per-vsync
     }
 }

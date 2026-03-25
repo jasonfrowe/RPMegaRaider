@@ -11,9 +11,19 @@
 #define SPRITE_DATA_START        0x0000U // Starting address in XRAM for sprite data
 
 #define RUNNING_MAN_DATA        (SPRITE_DATA_START) // Address for main tile bitmap data
-#define RUNNING_MAN_DATA_SIZE    0x9000 // 36864 bytes (18 frames * 32x32 * 16bpp)
+#define RUNNING_MAN_DATA_SIZE    0x2400U // 9216 bytes (18 frames * 16x16 * 16bpp)
 
-#define SPRITE_DATA_END         (RUNNING_MAN_DATA + RUNNING_MAN_DATA_SIZE) // End address for sprite data
+#define MAIN_MAP_DATA           (RUNNING_MAN_DATA + RUNNING_MAN_DATA_SIZE) // Address for main tile bitmap data
+#define MAIN_MAP_DATA_SIZE      0x1AC0U // 6848 bytes (107 tiles * 8x8 * 8bpp)
+
+#define MAIN_MAP_TILEMAP_DATA   (MAIN_MAP_DATA + MAIN_MAP_DATA_SIZE) // Address for Main Map tilemap data
+#define MAIN_MAP_TILEMAP_SIZE   0x04B0U // 1200 bytes (40 * 30 tile IDs)
+
+#define SPRITE_DATA_END         (MAIN_MAP_TILEMAP_DATA + MAIN_MAP_TILEMAP_SIZE) // End address for sprite data
+
+// Main Map configuration
+#define MAIN_MAP_WIDTH_TILES 40
+#define MAIN_MAP_HEIGHT_TILES 30
 
 // RIA input buffers are provided at fixed XRAM addresses.
 #define GAMEPAD_INPUT   0xFF78  // 40 bytes for 4 gamepads

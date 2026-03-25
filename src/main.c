@@ -4,8 +4,11 @@
 #include "constants.h"
 #include "input.h"
 #include "runningman.h"
+#include "palette.h"
 
 unsigned RUNNING_MAN_CONFIG; // set by init_graphics(), used by runningman module
+unsigned MAIN_MAP_CONFIG;    // set by init_graphics(), used by main map module
+
 
 static void init_graphics(void)
 {
@@ -16,16 +19,43 @@ static void init_graphics(void)
         return;
     }
 
+    RIA.addr0 = PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 256; i++) {
+        RIA.rw0 = tile_palette[i] & 0xFF;
+        RIA.rw0 = tile_palette[i] >> 8;
+    }
+
     RUNNING_MAN_CONFIG = SPRITE_DATA_END; // Set the configuration address to the end of sprite data
 
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, SCREEN_HALF_WIDTH);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, SCREEN_HALF_HEIGHT);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, xram_sprite_ptr, RUNNING_MAN_DATA);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, log_size, 5); // 32x32 pixels (2^5 = 32)
+    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, log_size, 4); // 16x16 pixels (2^4 = 16)
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, has_opacity_metadata, false);
 
     // Mode 4 args: MODE, OPTIONS, CONFIG, LENGTH, PLANE, BEGIN, END
     if (xreg_vga_mode(4, 0, RUNNING_MAN_CONFIG, 1, 1, 0, 0) < 0) {
+        puts("xreg_vga_mode failed");
+        return;
+    }
+
+    MAIN_MAP_CONFIG = RUNNING_MAN_CONFIG + sizeof(vga_mode4_sprite_t); // Place the map config right after the sprite config
+
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_pos_px, 0);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, width_tiles,  MAIN_MAP_WIDTH_TILES);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, height_tiles, MAIN_MAP_HEIGHT_TILES);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, xram_data_ptr,    MAIN_MAP_TILEMAP_DATA); // tile ID grid
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, xram_palette_ptr, PALETTE_ADDR);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, xram_tile_ptr,    MAIN_MAP_DATA);        // tile bitmaps
+
+    // Mode 2 args: MODE, OPTIONS, CONFIG, PLANE, BEGIN, END
+    // OPTIONS: bit3=0 (8x8 tiles), bit[2:0]=3 (8-bit color index) => 0b0011 = 3
+    // Plane 0 = background fill layer (behind sprite plane 1)
+    if (xreg_vga_mode(2, 0x03, MAIN_MAP_CONFIG, 0, 0, 0) < 0) {
         puts("xreg_vga_mode failed");
         return;
     }

@@ -19,6 +19,8 @@ endif()
 
 add_executable(RPMegaRaider)
 rp6502_asset(RPMegaRaider 0x10000 images/RunningMan.bin)
+rp6502_asset(RPMegaRaider 0x12400 images/HomeScreen.bin)
+rp6502_asset(RPMegaRaider 0x13EC0 images/HomeScreen_map.bin)
 rp6502_asset(RPMegaRaider help src/help.txt)
 
 rp6502_executable(RPMegaRaider 
