@@ -42,8 +42,8 @@ static void init_graphics(void)
 
     MAIN_MAP_CONFIG = RUNNING_MAN_CONFIG + sizeof(vga_mode4_sprite_t); // Place the map config right after the sprite config
 
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_wrap, true);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_wrap, true);
     xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_pos_px, 0);
     xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
     xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, width_tiles,  MAIN_MAP_WIDTH_TILES);
