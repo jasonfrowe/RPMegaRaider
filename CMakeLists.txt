@@ -32,4 +32,5 @@ target_sources(RPMegaRaider PRIVATE
     src/main.c
     src/input.c
     src/runningman.c
+    src/maze.c
 )

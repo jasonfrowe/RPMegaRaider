@@ -5,6 +5,9 @@
 #include "input.h"
 #include "runningman.h"
 
+int16_t player_start_x = 32;
+int16_t player_start_y = 128;
+
 #define FRAME_SIZE      (16u * 16u * 2u)
 #define SPRITE_W        16
 #define SPRITE_H        16
@@ -167,12 +170,15 @@ static void set_frame(uint8_t f)
 // Public API
 // ---------------------------------------------------------------------------
 
+int16_t runningman_get_x(void) { return x_pos; }
+int16_t runningman_get_y(void) { return y_pos; }
+
 void runningman_init(void)
 {
-    x_pos         = PLAYER_START_X;
+    x_pos         = player_start_x;
     x_frac        = 0;
     x_vel         = 0;
-    y_pos         = PLAYER_START_Y;
+    y_pos         = player_start_y;
     y_frac        = 0;
     y_vel         = 0;
     anim_tick     = 0;
@@ -265,8 +271,8 @@ void runningman_update(void)
                 y_frac &= 3u;
                 if (dy > 0) {
                     int16_t new_y = y_pos + dy;
-                    if (new_y > SCREEN_HEIGHT - SPRITE_H)
-                        new_y = SCREEN_HEIGHT - SPRITE_H;
+                    if (new_y > WORLD_H_PX - SPRITE_H)
+                        new_y = WORLD_H_PX - SPRITE_H;
                     if (feet_on_hard_ground(x_pos, new_y)) {
                         uint8_t row = (uint8_t)((new_y + SPRITE_H) / TILE_H);
                         y_pos     = (int16_t)(row * TILE_H) - SPRITE_H;
@@ -286,8 +292,6 @@ void runningman_update(void)
 
             if (on_ladder) {
                 x_vel = 0; x_frac = 0;
-                xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
-                xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, y_pos);
                 if (++anim_tick >= 8u) {
                     anim_tick = 0;
                     set_frame(current_frame == 8u ? 9u : 8u);
@@ -351,7 +355,7 @@ void runningman_update(void)
         if (dx > 0) {
             if (x_vel > 0) {
                 int16_t nx = x_pos + dx;
-                if (nx > SCREEN_WIDTH - SPRITE_W) nx = SCREEN_WIDTH - SPRITE_W;
+                if (nx > WORLD_W_PX - SPRITE_W) nx = WORLD_W_PX - SPRITE_W;
                 if (right_wall_hit(nx, y_pos)) { nx = x_pos; x_vel = 0; x_frac = 0; }
                 x_pos = nx;
             } else {
@@ -374,7 +378,7 @@ void runningman_update(void)
         if (dy > 0) {
             if (y_vel > 0) {
                 int16_t ny = y_pos + dy;
-                if (ny > SCREEN_HEIGHT - SPRITE_H) ny = SCREEN_HEIGHT - SPRITE_H;
+                if (ny > WORLD_H_PX - SPRITE_H) ny = WORLD_H_PX - SPRITE_H;
                 if (feet_on_solid(x_pos, ny)) {
                     uint8_t row = (uint8_t)((ny + SPRITE_H) / TILE_H);
                     ny       = (int16_t)(row * TILE_H) - SPRITE_H;
@@ -394,9 +398,6 @@ void runningman_update(void)
             }
         }
     }
-
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, y_pos);
 
     // -----------------------------------------------------------------------
     // Animation

@@ -7,6 +7,10 @@
 #define SCREEN_HALF_WIDTH (SCREEN_WIDTH / 2)
 #define SCREEN_HALF_HEIGHT (SCREEN_HEIGHT / 2)
 
+// Tile dimensions
+#define TILE_W 8
+#define TILE_H 8
+
 // Sprite data configuration
 #define SPRITE_DATA_START        0x0000U // Starting address in XRAM for sprite data
 
@@ -24,26 +28,26 @@
 
 #define SPRITE_DATA_END         (MAIN_MAP_TILEMAP_DATA + MAIN_MAP_TILEMAP_SIZE) // End address for sprite data
 
+// World dimensions in pixels
+#define WORLD_W_PX (MAIN_MAP_WIDTH_TILES * TILE_W)   // 1600
+#define WORLD_H_PX (MAIN_MAP_HEIGHT_TILES * TILE_H)  // 1200
+
 // Main Map configuration
 #define MAIN_MAP_WIDTH_TILES 200
 #define MAIN_MAP_HEIGHT_TILES 150
 
-// RIA input buffers are provided at fixed XRAM addresses.
+// Input buffers
 #define GAMEPAD_INPUT   0xFF78  // 40 bytes for 4 gamepads
 #define KEYBOARD_INPUT  0xFFA0  // 32 bytes keyboard bitfield
 
-// Keyboard, Gamepad and Sound
-// -------------------------------------------------------------------------
+// Palette and sound
 #define PALETTE_ADDR    0xFC00  // 256-color palette (512 bytes, 0xFC00-0xFDFF)
 #define PALETTE_SIZE    0x0200
 
 #define OPL_ADDR        0xFE00  // OPL2 register page (256 bytes, must be page-aligned)
 #define OPL_SIZE        0x0100
 
-// RIA input buffers are provided at fixed XRAM addresses.
-#define GAMEPAD_INPUT   0xFF78  // 40 bytes for 4 gamepads
-#define KEYBOARD_INPUT  0xFFA0  // 32 bytes keyboard bitfield
-
 extern unsigned RUNNING_MAN_CONFIG;
+extern unsigned MAIN_MAP_CONFIG;
 
 #endif // CONSTANTS_H

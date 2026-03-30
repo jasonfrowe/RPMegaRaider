@@ -4,6 +4,7 @@
 #include "constants.h"
 #include "input.h"
 #include "runningman.h"
+#include "maze.h"
 #include "palette.h"
 
 unsigned RUNNING_MAN_CONFIG; // set by init_graphics(), used by runningman module
@@ -28,8 +29,8 @@ static void init_graphics(void)
 
     RUNNING_MAN_CONFIG = SPRITE_DATA_END; // Set the configuration address to the end of sprite data
 
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, PLAYER_START_X);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, PLAYER_START_Y);
+    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, 0);
+    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, 0);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, xram_sprite_ptr, RUNNING_MAN_DATA);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, log_size, 4); // 16x16 pixels (2^4 = 16)
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, has_opacity_metadata, false);
@@ -42,8 +43,8 @@ static void init_graphics(void)
 
     MAIN_MAP_CONFIG = RUNNING_MAN_CONFIG + sizeof(vga_mode4_sprite_t); // Place the map config right after the sprite config
 
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_wrap, true);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_wrap, true);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
+    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);
     xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_pos_px, 0);
     xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
     xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, width_tiles,  MAIN_MAP_WIDTH_TILES);
@@ -75,6 +76,7 @@ int main(void)
     xregn(0, 0, 2, 1, GAMEPAD_INPUT);
 
     init_graphics();
+    maze_generate();
     init_input_system();
     runningman_init();
 
@@ -89,6 +91,28 @@ int main(void)
 
         // 3. UPDATE
         runningman_update();
+
+        // 4. CAMERA — scroll map and reposition sprite in screen space
+        {
+            int16_t px = runningman_get_x();
+            int16_t py = runningman_get_y();
+
+            int16_t cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
+            int16_t cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
+
+            if (cam_x < 0) cam_x = 0;
+            if (cam_x > (int16_t)(WORLD_W_PX - SCREEN_WIDTH))  cam_x = (int16_t)(WORLD_W_PX - SCREEN_WIDTH);
+            if (cam_y < 0) cam_y = 0;
+            if (cam_y > (int16_t)(WORLD_H_PX - SCREEN_HEIGHT)) cam_y = (int16_t)(WORLD_H_PX - SCREEN_HEIGHT);
+
+            // Sprite position is relative to screen
+            xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, (px - cam_x));
+            xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, (py - cam_y));
+
+            // Map scroll (negative offset shifts visible window right/down)
+            xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_pos_px, (-cam_x));
+            xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_pos_px, (-cam_y));
+        }
     }
     return 0;
 }
