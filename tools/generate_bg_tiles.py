@@ -1,46 +1,59 @@
 #!/usr/bin/env python3
 """
-generate_bg_tiles.py — Generate BG tileset for RPMegaRaider.
+generate_bg_tiles.py — Circuit board BG tileset for RPMegaRaider.
+
+Tile index layout (matched to generate_maze.py BG_ constants):
+  0   BG_SUBSTRATE      — dark PCB background
+  1   BG_SUBSTRATE_ALT  — substrate with faint texture
+  2   BG_TRACE_H        — horizontal gold trace
+  3   BG_TRACE_V        — vertical gold trace
+  4   BG_CORNER_A       — trace corner (right+up)
+  5   BG_CORNER_B       — trace corner (left+up)
+  6   BG_VIA            — solder via / pad
+  7   BG_T_JUNC         — T-junction (H + V stub down)
+  8   BG_IC_BODY        — IC chip body
+  9   BG_IC_PINS        — IC chip with pin stubs
+  10  BG_PAD            — small copper pad
+  11  BG_CAPACITOR      — capacitor (blue body)
+  12  BG_LED_RED        — red LED indicator
+  13  BG_LED_GREEN      — green LED indicator
+  14  BG_TRACE_VIA      — H trace with centre via blob
+  15  BG_CROSS          — cross junction (H+V, bright centre)
 
 Outputs:
   BG_TILES.BIN  256 tiles × 32 bytes = 8192 bytes
-                4bpp "tall" bitmap: high nibble = left pixel, low nibble = right pixel.
-                Color index 0 is the "furthest back" color (solid BG color).
-                BG is on plane 0 (no transparency needed — fills everything behind FG).
-
-  BG_PAL.BIN    16 colors × 2 bytes = 32 bytes  (RGB555 LE)
-
-The BG layer is purely decorative cave/dungeon scenery viewed behind the FG layer.
+  BG_PAL.BIN    16 colors × 2 bytes  = 32 bytes  (RGB555 LE)
 """
 
 import struct, os
 
 def rgb555(r8, g8, b8):
+    """Opaque color: bits [15:11]=B, [10:6]=G, [5]=alpha(1=opaque), [4:0]=R."""
     r = (r8 >> 3) & 0x1F
     g = (g8 >> 3) & 0x1F
     b = (b8 >> 3) & 0x1F
-    return (b << 10) | (g << 5) | r   # BGR555 packing
+    return (b << 11) | (g << 6) | (1 << 5) | r   # alpha bit always set (BG is never transparent)
 
 # ---------------------------------------------------------------------------
-# BG Palette  (cave / dungeon atmosphere — deep blues and purples)
+# BG Palette  — circuit board / PCB theme
 # ---------------------------------------------------------------------------
 PALETTE = [
-    rgb555( 12,  10,  20),   # 0  deep cave background (near black / dark blue)
-    rgb555( 25,  20,  40),   # 1  dark cave void
-    rgb555( 40,  35,  60),   # 2  mid cave shadow
-    rgb555( 55,  50,  80),   # 3  lighter cave shadow
-    rgb555( 70,  65, 100),   # 4  cave mid-tone
-    rgb555( 90,  85, 120),   # 5  cave highlight
-    rgb555( 45,  30,  20),   # 6  dark rock/stalagmite
-    rgb555( 70,  55,  35),   # 7  mid rock
-    rgb555(100,  80,  55),   # 8  light rock
-    rgb555( 20,  15,  35),   # 9  deep void accent
-    rgb555( 60,  40,  80),   # 10 purple cave accent
-    rgb555( 80,  60, 100),   # 11 soft purple highlight
-    rgb555( 30,  55,  30),   # 12 deep moss green
-    rgb555( 50,  80,  45),   # 13 moss highlight
-    rgb555( 15,  45,  60),   # 14 deep water reflection
-    rgb555( 30,  70,  90),   # 15 water highlight
+    rgb555(  6,  12,   6),   # 0  deep PCB black-green (darkest)
+    rgb555( 12,  22,  10),   # 1  dark PCB substrate
+    rgb555( 20,  35,  15),   # 2  mid substrate
+    rgb555( 30,  52,  22),   # 3  lighter substrate area
+    rgb555(130,  92,   8),   # 4  dark gold trace edge
+    rgb555(195, 150,  18),   # 5  gold trace main
+    rgb555(240, 205,  65),   # 6  bright gold / solder highlight
+    rgb555(175,  75,  18),   # 7  copper pad dark
+    rgb555(218, 155,  75),   # 8  copper pad light
+    rgb555( 18,  18,  32),   # 9  IC chip body dark
+    rgb555( 32,  32,  58),   # 10 IC chip body mid
+    rgb555( 65,  65,  95),   # 11 IC chip highlight
+    rgb555(200,  28,  28),   # 12 red LED / power indicator
+    rgb555( 28, 195,  75),   # 13 green LED / status indicator
+    rgb555( 28,  75, 215),   # 14 blue capacitor / trace
+    rgb555(220, 220, 232),   # 15 white silkscreen
 ]
 
 assert len(PALETTE) == 16
@@ -61,206 +74,229 @@ def make_tile(rows):
 def solid_tile(c):
     return make_tile([[c]*8]*8)
 
-# ---------------------------------------------------------------------------
-# BG tile library
-# ---------------------------------------------------------------------------
+# Trace occupies rows 3-4 (H) or cols 3-4 (V), 2 pixels wide
+# Palette: 1=substrate, 4=trace edge (dark gold), 5=trace main, 6=bright
 
-def sky_tile():
-    """Open cave void — plain background."""
+def bg_substrate():
+    """Plain PCB substrate background."""
     return solid_tile(1)
 
-def sky_mid_tile():
-    """Slightly lighter cave void."""
-    return solid_tile(2)
-
-def sky_light_tile():
-    """Lighter background area for depth variation."""
-    return solid_tile(3)
-
-def cave_wall_dark():
-    """Cave back-wall rock (dark)."""
-    return make_tile([
-        [1,1,2,2,2,1,1,1],
-        [1,2,2,2,2,2,1,1],
-        [2,2,6,2,2,2,2,1],
-        [2,2,2,2,6,2,2,2],
-        [1,2,2,2,2,2,2,2],
-        [1,1,2,6,2,2,2,1],
-        [1,1,2,2,2,6,2,1],
-        [1,1,1,2,2,2,1,1],
-    ])
-
-def cave_wall_mid():
-    """Cave back-wall rock (mid)."""
-    return make_tile([
-        [2,2,3,3,3,2,2,2],
-        [2,3,3,3,3,3,2,2],
-        [3,3,7,3,3,3,3,2],
-        [3,3,3,3,7,3,3,3],
-        [2,3,3,3,3,3,3,3],
-        [2,2,3,7,3,3,3,2],
-        [2,2,3,3,3,7,3,2],
-        [2,2,2,3,3,3,2,2],
-    ])
-
-def stalactite_tip():
-    """Stalactite hanging from above — tip only."""
-    return make_tile([
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,0,6,6,0,0,0],
-        [0,0,0,6,6,0,0,0],
-        [0,0,0,0,6,0,0,0],
-        [0,0,0,0,6,0,0,0],
-        [0,0,0,0,0,0,0,0],
-    ])
-
-def stalactite_body():
-    """Stalactite body (connects to ceiling)."""
-    return make_tile([
-        [0,6,7,7,7,7,6,0],
-        [0,6,7,7,7,7,6,0],
-        [0,6,7,8,7,7,6,0],
-        [0,6,7,7,7,7,6,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-    ])
-
-def stalagmite_tip():
-    """Stalagmite rising from below — tip only."""
-    return make_tile([
-        [0,0,0,0,0,0,0,0],
-        [0,0,0,0,6,0,0,0],
-        [0,0,0,0,6,0,0,0],
-        [0,0,0,6,6,0,0,0],
-        [0,0,0,6,6,0,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-    ])
-
-def stalagmite_body():
-    """Stalagmite body."""
-    return make_tile([
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,0,6,7,7,6,0,0],
-        [0,6,7,8,7,7,6,0],
-        [0,6,7,7,7,7,6,0],
-        [0,6,7,7,7,7,6,0],
-        [0,6,7,7,7,7,6,0],
-        [0,6,7,7,7,7,6,0],
-    ])
-
-def moss_patch():
-    """Mossy background detail."""
-    return make_tile([
-        [1,1,1,12,12,1,1,1],
-        [1,1,12,13,13,12,1,1],
-        [1,12,13,13,13,13,12,1],
-        [1,12,12,13,12,12,12,1],
-        [1,1,12,12,12,12,1,1],
-        [1,1,1,12,12,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-def water_shimmer():
-    """Underground water effect."""
-    return make_tile([
-        [14,14,14,15,14,14,15,14],
-        [14,15,14,14,14,15,14,14],
-        [15,14,14,14,14,14,14,15],
-        [14,14,15,14,15,14,14,14],
-        [14,14,14,14,14,14,15,14],
-        [14,15,14,15,14,14,14,14],
-        [14,14,14,14,14,15,14,15],
-        [15,14,15,14,14,14,14,14],
-    ])
-
-def crystal_blue():
-    """Blue crystal formation."""
-    return make_tile([
-        [1,1,1,14,15,1,1,1],
-        [1,1,14,15,15,14,1,1],
-        [1,14,15,15,15,15,14,1],
-        [1,14,15,14,14,15,14,1],
-        [1,1,14,15,15,14,1,1],
-        [1,1,1,14,14,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-def purple_glow():
-    """Glowing purple mushroom/crystal."""
+def bg_substrate_alt():
+    """Substrate with faint via dots."""
     return make_tile([
         [1,1,1,1,1,1,1,1],
-        [1,1,1,10,10,1,1,1],
-        [1,1,10,11,11,10,1,1],
-        [1,10,11,11,11,11,10,1],
-        [1,10,10,11,10,10,10,1],
-        [1,1,10,10,10,10,1,1],
-        [1,1,1,10,10,1,1,1],
         [1,1,1,1,1,1,1,1],
-    ])
-
-def cave_dot_pattern():
-    """Subtle dotted cave texture."""
-    return make_tile([
-        [1,1,1,2,1,1,1,1],
-        [1,1,1,1,1,1,2,1],
-        [1,2,1,1,1,1,1,1],
+        [1,1,2,1,1,1,2,1],
+        [1,1,1,1,1,1,1,1],
         [1,1,1,1,2,1,1,1],
-        [1,1,2,1,1,1,1,2],
-        [1,1,1,1,1,2,1,1],
-        [2,1,1,2,1,1,1,1],
-        [1,1,1,1,1,1,2,1],
+        [1,1,1,1,1,1,1,1],
+        [1,2,1,1,1,1,1,2],
+        [1,1,1,1,1,1,1,1],
     ])
 
-def cave_stripe():
-    """Diagonal stripe rock texture."""
+def bg_trace_h():
+    """Horizontal gold trace through tile centre (rows 3-4)."""
     return make_tile([
-        [2,1,1,1,2,1,1,1],
-        [1,2,1,1,1,2,1,1],
-        [1,1,2,1,1,1,2,1],
-        [1,1,1,2,1,1,1,2],
-        [2,1,1,1,2,1,1,1],
-        [1,2,1,1,1,2,1,1],
-        [1,1,2,1,1,1,2,1],
-        [1,1,1,2,1,1,1,2],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [4,5,5,5,5,5,5,4],
+        [4,5,5,5,5,5,5,4],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+    ])
+
+def bg_trace_v():
+    """Vertical gold trace through tile centre (cols 3-4)."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,4,4,1,1,1],
+    ])
+
+def bg_corner_a():
+    """Corner: V trace from top bends right (SE turn)."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,5,5,4],
+        [1,1,1,4,5,5,5,4],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+    ])
+
+def bg_corner_b():
+    """Corner: V trace from top bends left (SW turn)."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [4,5,5,5,5,1,1,1],
+        [4,5,5,5,4,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+    ])
+
+def bg_via():
+    """Solder via — copper ring with drill hole."""
+    return make_tile([
+        [1,1,1,1,1,1,1,1],
+        [1,1,4,5,5,4,1,1],
+        [1,4,5,7,7,5,4,1],
+        [1,5,7,0,0,7,5,1],
+        [1,5,7,0,0,7,5,1],
+        [1,4,5,7,7,5,4,1],
+        [1,1,4,5,5,4,1,1],
+        [1,1,1,1,1,1,1,1],
+    ])
+
+def bg_t_junc():
+    """T-junction: H trace + V trace going downward."""
+    return make_tile([
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [4,5,5,5,5,5,5,4],
+        [4,5,5,5,5,5,5,4],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,4,4,1,1,1],
+    ])
+
+def bg_ic_body():
+    """IC chip interior body."""
+    return make_tile([
+        [9,9,9,9,9,9,9,9],
+        [9,10,10,10,10,10,10,9],
+        [9,10,10,10,10,10,10,9],
+        [9,10,11,11,11,11,10,9],
+        [9,10,11,11,11,11,10,9],
+        [9,10,10,10,10,10,10,9],
+        [9,10,10,10,10,10,10,9],
+        [9,9,9,9,9,9,9,9],
+    ])
+
+def bg_ic_pins():
+    """IC chip with gold pin stubs on left side."""
+    return make_tile([
+        [1,9,9,9,9,9,9,9],
+        [5,9,10,10,10,10,10,9],
+        [1,9,10,11,11,11,10,9],
+        [5,9,10,11,9,11,10,9],
+        [5,9,10,11,9,11,10,9],
+        [1,9,10,11,11,11,10,9],
+        [5,9,10,10,10,10,10,9],
+        [1,9,9,9,9,9,9,9],
+    ])
+
+def bg_pad():
+    """Small square copper component pad."""
+    return make_tile([
+        [1,1,1,1,1,1,1,1],
+        [1,4,4,4,4,4,4,1],
+        [1,4,5,5,5,5,4,1],
+        [1,4,5,6,6,5,4,1],
+        [1,4,5,6,6,5,4,1],
+        [1,4,5,5,5,5,4,1],
+        [1,4,4,4,4,4,1,1],
+        [1,1,1,1,1,1,1,1],
+    ])
+
+def bg_capacitor():
+    """Capacitor — blue cylindrical body with gold leads."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,14,14,14,14,14,14,1],
+        [1,14,15,14,14,15,14,1],
+        [1,14,14,14,14,14,14,1],
+        [1,14,14,14,14,14,14,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,4,4,1,1,1],
+    ])
+
+def bg_led_red():
+    """Red LED indicator with gold leads."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,12,12,12,12,1,1],
+        [1,12,12,12,12,12,12,1],
+        [1,12,12,12,12,12,12,1],
+        [1,1,12,12,12,12,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,4,4,1,1,1],
+    ])
+
+def bg_led_green():
+    """Green LED indicator with gold leads."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,13,13,13,13,1,1],
+        [1,13,13,13,13,13,13,1],
+        [1,13,13,13,13,13,13,1],
+        [1,1,13,13,13,13,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,4,4,1,1,1],
+    ])
+
+def bg_trace_via():
+    """H trace with solder blob at centre."""
+    return make_tile([
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,7,7,1,1,1],
+        [4,5,5,8,8,5,5,4],
+        [4,5,5,8,8,5,5,4],
+        [1,1,1,7,7,1,1,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1],
+    ])
+
+def bg_cross():
+    """Cross junction — H and V traces, bright solder at centre."""
+    return make_tile([
+        [1,1,1,4,4,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [4,5,5,6,6,5,5,4],
+        [4,5,5,6,6,5,5,4],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,5,5,1,1,1],
+        [1,1,1,4,4,1,1,1],
     ])
 
 # ---------------------------------------------------------------------------
 # Build the 256-tile array
 # ---------------------------------------------------------------------------
-tiles = [solid_tile(0)] * 256   # default: deep void
+tiles = [solid_tile(0)] * 256   # default: deep PCB void
 
-# Tile 0: deep background (fill)
-tiles[0]  = solid_tile(0)
-
-# Tiles 1-5: cave background variants
-tiles[1]  = sky_tile()
-tiles[2]  = sky_mid_tile()
-tiles[3]  = sky_light_tile()
-tiles[4]  = cave_wall_dark()
-tiles[5]  = cave_wall_mid()
-tiles[6]  = cave_dot_pattern()
-tiles[7]  = cave_stripe()
-
-# Tiles 8-11: geological features
-tiles[8]  = stalactite_body()
-tiles[9]  = stalactite_tip()
-tiles[10] = stalagmite_body()
-tiles[11] = stalagmite_tip()
-
-# Tiles 12-15: organic / magical features
-tiles[12] = moss_patch()
-tiles[13] = water_shimmer()
-tiles[14] = crystal_blue()
-tiles[15] = purple_glow()
+tiles[0]  = bg_substrate()
+tiles[1]  = bg_substrate_alt()
+tiles[2]  = bg_trace_h()
+tiles[3]  = bg_trace_v()
+tiles[4]  = bg_corner_a()
+tiles[5]  = bg_corner_b()
+tiles[6]  = bg_via()
+tiles[7]  = bg_t_junc()
+tiles[8]  = bg_ic_body()
+tiles[9]  = bg_ic_pins()
+tiles[10] = bg_pad()
+tiles[11] = bg_capacitor()
+tiles[12] = bg_led_red()
+tiles[13] = bg_led_green()
+tiles[14] = bg_trace_via()
+tiles[15] = bg_cross()
 
 # ---------------------------------------------------------------------------
 # Output

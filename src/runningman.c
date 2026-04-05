@@ -38,7 +38,7 @@ int16_t player_start_y = 4336;
 
 // Solid tiles block movement
 #define SOLID_MIN   1u
-#define SOLID_MAX   10u
+#define SOLID_MAX   30u
 
 // Ladder tiles 107-110
 #define LADDER_MIN   107u
@@ -64,7 +64,7 @@ static bool     jump_btn_prev;
 static int8_t   last_dir;
 static uint8_t  decel_tick;
 static bool     on_ladder;
-static uint8_t  ladder_col;
+static uint16_t ladder_col;
 
 // ---------------------------------------------------------------------------
 // Tile helpers
@@ -79,8 +79,8 @@ static bool tile_is_solid(uint8_t t)  { return t >= SOLID_MIN && t <= SOLID_MAX;
 static bool tile_is_ladder(uint8_t t) { return t >= LADDER_MIN && t <= LADDER_MAX; }
 
 // Ladder tile overlapping the player's body (head row through sprite bottom row).
-// Returns the tile column, or 0xFF if none.
-static uint8_t ladder_col_in_body(int16_t px, int16_t py)
+// Returns the tile column, or 0xFFFF if none.
+static uint16_t ladder_col_in_body(int16_t px, int16_t py)
 {
     uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
     uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
@@ -88,20 +88,20 @@ static uint8_t ladder_col_in_body(int16_t px, int16_t py)
     uint16_t row_b = (uint16_t)((py + SPRITE_H - 1) / TILE_H);
     for (uint16_t r = row_t; r <= row_b; r++)
         for (uint16_t c = col_l; c <= col_r; c++)
-            if (tile_is_ladder(read_tile(c, r))) return (uint8_t)(c & 0xFF);
-    return 0xFF;
+            if (tile_is_ladder(read_tile(c, r))) return c;
+    return 0xFFFF;
 }
 
 // Ladder tile at the feet row (the row directly below the sprite bottom).
-// Returns the tile column, or 0xFF if none.
-static uint8_t ladder_at_feet(int16_t px, int16_t py)
+// Returns the tile column, or 0xFFFF if none.
+static uint16_t ladder_at_feet(int16_t px, int16_t py)
 {
     uint16_t row   = (uint16_t)((py + SPRITE_H) / TILE_H);
     uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
     uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
-    if (tile_is_ladder(read_tile(col_l, row))) return (uint8_t)(col_l & 0xFF);
-    if (tile_is_ladder(read_tile(col_r, row))) return (uint8_t)(col_r & 0xFF);
-    return 0xFF;
+    if (tile_is_ladder(read_tile(col_l, row))) return col_l;
+    if (tile_is_ladder(read_tile(col_r, row))) return col_r;
+    return 0xFFFF;
 }
 
 // feet_on_solid: solid tiles OR the topmost ladder tile in a column.
@@ -206,8 +206,8 @@ void runningman_update(void)
     // -----------------------------------------------------------------------
     if (!on_ladder) {
         if (up) {
-            uint8_t col = ladder_col_in_body(x_pos, y_pos);
-            if (col != 0xFF) {
+            uint16_t col = ladder_col_in_body(x_pos, y_pos);
+            if (col != 0xFFFF) {
                 on_ladder  = true;
                 ladder_col = col;
                 x_pos = (int16_t)((uint16_t)col * TILE_W) - HITBOX_X_OFF;
@@ -217,8 +217,8 @@ void runningman_update(void)
             }
         }
         if (!on_ladder && down && grounded) {
-            uint8_t col = ladder_at_feet(x_pos, y_pos);
-            if (col != 0xFF) {
+            uint16_t col = ladder_at_feet(x_pos, y_pos);
+            if (col != 0xFFFF) {
                 on_ladder  = true;
                 ladder_col = col;
                 x_pos = (int16_t)((uint16_t)col * TILE_W) - HITBOX_X_OFF;
@@ -251,8 +251,7 @@ void runningman_update(void)
                     if (new_y < 0) new_y = 0;
                     if (head_hits_solid(x_pos, new_y)) {
                         y_frac = 0; // ceiling — stop
-                    } else if (ladder_col_in_body(x_pos, new_y) == 0xFF) {
-                        // Body cleared top of ladder — snap feet to the floor above.
+                    } else if (ladder_col_in_body(x_pos, new_y) == 0xFFFF) {
                         // Use new_y (not the stale y_pos) so we land on the platform
                         // tile rather than one row inside the shaft.
                         uint16_t feet_row = (uint16_t)((new_y + SPRITE_H) / TILE_H);
@@ -279,7 +278,7 @@ void runningman_update(void)
                         y_frac    = 0;
                         on_ladder = false;
                         grounded  = true;
-                    } else if (ladder_col_in_body(x_pos, new_y) == 0xFF) {
+                    } else if (ladder_col_in_body(x_pos, new_y) == 0xFFFF) {
                         // Past the last rung with no floor — fall
                         y_pos     = new_y;
                         on_ladder = false;

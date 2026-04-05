@@ -36,7 +36,7 @@
 // ---------------------------------------------------------------------------
 #define TILE_EMPTY      0
 #define TILE_SOLID_MIN  1
-#define TILE_SOLID_MAX  10
+#define TILE_SOLID_MAX  30
 #define TILE_LADDER_MIN 107
 #define TILE_LADDER_MAX 110
 

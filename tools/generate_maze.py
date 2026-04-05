@@ -11,12 +11,31 @@ This is optimal for the horizontal-scroll streaming engine (1 seek + 1 read per 
 
 FG tile meanings (match constants.h and generate_fg_tiles.py):
   0         = empty air (transparent, shows BG through)
-  1-10      = solid wall / platform (blocks player)
+  1-30      = solid wall / platform (blocks player); zone-specific appearance
   107-110   = ladder tiles (climbable shafts)
 
-BG tile meanings (generate_bg_tiles.py):
-  0-7       = background cave planes
-  8-15      = stalactites, stalagmites, moss, crystals
+FG zone layout (matched to generate_fg_tiles.py):
+  1-10  DEEP  (world row >= 400): volcanic basalt
+  11-20 MID   (world row >= 200): dungeon brick
+  21-30 UPPER (world row <  200): ancient carved stone + crystal
+
+BG tile meanings (generate_bg_tiles.py — circuit board theme):
+  0   BG_SUBSTRATE      — dark PCB background
+  1   BG_SUBSTRATE_ALT  — substrate with faint texture
+  2   BG_TRACE_H        — horizontal gold trace
+  3   BG_TRACE_V        — vertical gold trace
+  4   BG_CORNER_A       — trace corner right+up
+  5   BG_CORNER_B       — trace corner left+up
+  6   BG_VIA            — solder via
+  7   BG_T_JUNC         — T-junction
+  8   BG_IC_BODY        — IC chip body
+  9   BG_IC_PINS        — IC chip with pins
+  10  BG_PAD            — copper component pad
+  11  BG_CAPACITOR      — capacitor
+  12  BG_LED_RED        — red LED
+  13  BG_LED_GREEN      — green LED
+  14  BG_TRACE_VIA      — H trace + via blob
+  15  BG_CROSS          — cross junction
 """
 
 import random, os
@@ -42,30 +61,40 @@ GAP_WIDTH_MAX    = 8
 
 # FG tile IDs
 TILE_EMPTY       = 0
-TILE_SOLID       = 1    # generic solid (for borders/fill)
-TILE_PLATFORM_A  = 3    # platform top variant (tile index 3 in STONE_TILES set)
-TILE_PLATFORM_B  = 4    # ground fill variant
+TILE_SOLID       = 1    # dark basalt — borders and generic solid
 TILE_LADDER_TOP  = 107
 TILE_LADDER_MID1 = 108
 TILE_LADDER_MID2 = 109
 TILE_LADDER_BOT  = 110
 
-# BG tile IDs
-BG_VOID         = 1    # basic dark cave background
-BG_MID          = 2    # slightly lighter cave
-BG_LIGHT        = 3    # lightest cave
-BG_ROCK_DARK    = 4    # dark rock wall texture
-BG_ROCK_MID     = 5    # mid rock
-BG_DOTS         = 6    # dotted texture
-BG_STRIPE       = 7    # diagonal stripe
-BG_STAL_BODY    = 8    # stalactite body
-BG_STAL_TIP     = 9    # stalactite tip
-BG_STAG_BODY    = 10   # stalagmite body
-BG_STAG_TIP     = 11   # stalagmite tip
-BG_MOSS         = 12   # moss patch
-BG_WATER        = 13   # water shimmer
-BG_CRYSTAL      = 14   # blue crystal
-BG_GLOW         = 15   # purple glow
+# FG zone boundaries (world row)
+ZONE_DEEP_MIN  = 400   # rows >= 400: volcanic deep
+ZONE_MID_MIN   = 200   # rows >= 200: dungeon mid
+                        # rows <  200: ancient upper
+
+# BG tile IDs — circuit board theme (match generate_bg_tiles.py)
+BG_SUBSTRATE     = 0
+BG_SUBSTRATE_ALT = 1
+BG_TRACE_H       = 2
+BG_TRACE_V       = 3
+BG_CORNER_A      = 4
+BG_CORNER_B      = 5
+BG_VIA           = 6
+BG_T_JUNC        = 7
+BG_IC_BODY       = 8
+BG_IC_PINS       = 9
+BG_PAD           = 10
+BG_CAPACITOR     = 11
+BG_LED_RED       = 12
+BG_LED_GREEN     = 13
+BG_TRACE_VIA     = 14
+BG_CROSS         = 15
+
+# Circuit board trace grid spacing
+BG_H_SPACING = 10   # H trace every 10 rows
+BG_V_SPACING = 8    # V trace every 8 cols
+BG_H_OFFSET  = 4    # first H trace row
+BG_V_OFFSET  = 3    # first V trace col
 
 # ---------------------------------------------------------------------------
 # RNG (same xorshift16 as maze.c for reproducibility)
@@ -105,6 +134,23 @@ def fg_get(col, row):
         return fg[col * WORLD_H + row]
     return TILE_SOLID
 
+def bg_get(col, row):
+    if 0 <= col < WORLD_W and 0 <= row < WORLD_H:
+        return bg[col * WORLD_H + row]
+    return BG_SUBSTRATE
+
+def zone_platform_tile(row):
+    """Return zone-appropriate platform-top FG tile for a given world row."""
+    if row >= ZONE_DEEP_MIN:   return 3   # deep_platform_top
+    elif row >= ZONE_MID_MIN:  return 13  # mid_platform_top
+    else:                      return 23  # upper_platform_top
+
+def zone_fill_tile(row):
+    """Return zone-appropriate fill FG tile for a given world row."""
+    if row >= ZONE_DEEP_MIN:   return 4   # deep_fill_a
+    elif row >= ZONE_MID_MIN:  return 14  # mid_fill_a
+    else:                      return 24  # upper_fill_a
+
 def fill_fg_rect(col0, row0, col1, row1, tile):
     for c in range(col0, col1 + 1):
         for r in range(row0, row1 + 1):
@@ -122,23 +168,31 @@ def generate():
     seed_rng(0xBEEF)
 
     # ------------------------------------------------------------------
-    # 1. Background fill — layered cave atmosphere.
+    # 1. Background fill — circuit board PCB pattern.
     # ------------------------------------------------------------------
-    # Zone rows: the world is split into 3 vertical zones for BG variety.
-    zone_boundaries = [WORLD_H // 3, 2 * WORLD_H // 3]  # rows 200, 400
-
+    # Lay down the trace grid: H traces every BG_H_SPACING rows,
+    # V traces every BG_V_SPACING cols. Intersections become BG_CROSS.
     for col in range(WORLD_W):
         for row in range(WORLD_H):
-            if row < zone_boundaries[0]:
-                # Upper zone: lighter cave (sky is above the labyrinth)
-                t = BG_MID if (col + row) % 7 != 0 else BG_LIGHT
-            elif row < zone_boundaries[1]:
-                # Middle zone: standard cave darkness
-                t = BG_VOID if (col * 3 + row) % 11 != 0 else BG_DOTS
+            dr = (row - BG_H_OFFSET) % BG_H_SPACING
+            dc = (col - BG_V_OFFSET) % BG_V_SPACING
+            on_h = dr == 0 or dr == 1   # 2-pixel-wide H trace
+            on_v = dc == 0 or dc == 1   # 2-pixel-wide V trace
+            if on_h and on_v:
+                t = BG_CROSS
+            elif on_h:
+                t = BG_TRACE_H
+            elif on_v:
+                t = BG_TRACE_V
             else:
-                # Lower zone: deep cave — rock textures
-                t = BG_ROCK_DARK if (col + row * 2) % 9 != 0 else BG_ROCK_MID
+                # Alternate between substrate variants for faint texture
+                t = BG_SUBSTRATE_ALT if (col * 3 + row * 5) % 17 == 0 else BG_SUBSTRATE
             bg_set(col, row, t)
+
+    # Place vias at every other H/V intersection
+    for row in range(BG_H_OFFSET, WORLD_H, BG_H_SPACING * 2):
+        for col in range(BG_V_OFFSET, WORLD_W, BG_V_SPACING * 3):
+            bg_set(col, row, BG_VIA)
 
     # ------------------------------------------------------------------
     # 2. Floor rows: evenly spaced with random offset, bottom up.
@@ -170,15 +224,12 @@ def generate():
             fg_set(WORLD_W - 1 - c, row, TILE_SOLID)
 
     # ------------------------------------------------------------------
-    # 4. Ground fill: solid from floor[0] downward (gravel, earth).
+    # 4. Ground fill: solid from floor[0] downward.
     # ------------------------------------------------------------------
-    ground_fill_tile = TILE_PLATFORM_B   # tile index 4 = stone_tile_d
+    ground_fill_tile = zone_fill_tile(floor_row[0])  # deep fill (row 560)
     for col in range(BORDER_COLS, WORLD_W - BORDER_COLS):
         for row in range(floor_row[0], WORLD_H - 1):
             fg_set(col, row, ground_fill_tile)
-        # BG: show deep rock texture at ground level
-        for row in range(floor_row[0], WORLD_H - 1):
-            bg_set(col, row, BG_ROCK_DARK)
 
     # ------------------------------------------------------------------
     # 5. Floor lines for floors 1..NUM_FLOORS-1.
@@ -191,9 +242,8 @@ def generate():
         if r < 2 or r >= WORLD_H - 1:
             continue  # floor out of world bounds
 
-        platform_tile = TILE_PLATFORM_A   # tile 3 = stone_tile_c (bevelled top)
-        # Choose a BG row above each floor to place a stalactite occasionally
-        bg_row_above = r - 1
+        platform_tile = zone_platform_tile(r)  # zone-specific top tile
+        bg_row_above = r - 1  # used for decorations below
 
         # Place gaps first (randomly spaced)
         pos = BORDER_COLS + rng_mod(MIN_GAP_SPACING)
@@ -214,11 +264,12 @@ def generate():
             if not in_gap:
                 fg_set(col, r, platform_tile)
 
-        # Occasionally add stalagmites to BG just above floor lines
-        for col in range(BORDER_COLS + 2, WORLD_W - BORDER_COLS - 2, 7 + rng_mod(5)):
+        # Occasionally add a component pad below floor lines
+        for col in range(BORDER_COLS + 4, WORLD_W - BORDER_COLS - 4, 13 + rng_mod(9)):
             in_gap = any(gs <= col < ge for gs, ge in gaps_placed)
-            if not in_gap and fg_get(col, bg_row_above) == TILE_EMPTY:
-                bg_set(col, bg_row_above, BG_STAG_TIP)
+            if not in_gap and fg_get(col, r + 1) == TILE_EMPTY:
+                if bg_get(col, r + 1) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT):
+                    bg_set(col, r + 1, BG_PAD)
 
     # ------------------------------------------------------------------
     # 6. Ladder shafts connecting adjacent floor pairs.
@@ -262,36 +313,40 @@ def generate():
             fg_set(col, shaft_bot, TILE_LADDER_BOT)
 
     # ------------------------------------------------------------------
-    # 7. BG stalactites sprinkled near ceilings (upper side of low-row flats).
+    # 7. BG circuit board components — ICs, LEDs, capacitors.
     # ------------------------------------------------------------------
+    seed_rng(0xCAFE)   # fresh seed for component placement
+
+    # IC blocks: 2×1 tiles (body + pins)
+    for _ in range(300):
+        col = BORDER_COLS + 1 + rng_mod(WORLD_W - 2 * BORDER_COLS - 3)
+        row = 2 + rng_mod(WORLD_H - 4)
+        if fg_get(col, row) != TILE_EMPTY or fg_get(col + 1, row) != TILE_EMPTY:
+            continue
+        if (bg_get(col, row) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT) and
+                bg_get(col + 1, row) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT)):
+            bg_set(col,     row, BG_IC_BODY)
+            bg_set(col + 1, row, BG_IC_PINS)
+
+    # LEDs and capacitors at substrate tiles
+    for _ in range(600):
+        col = BORDER_COLS + rng_mod(WORLD_W - 2 * BORDER_COLS)
+        row = 2 + rng_mod(WORLD_H - 4)
+        if fg_get(col, row) != TILE_EMPTY:
+            continue
+        if bg_get(col, row) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT):
+            c = rng_mod(3)
+            bg_set(col, row, (BG_LED_RED, BG_LED_GREEN, BG_CAPACITOR)[c])
+
+    # T-junctions on H-traces near floors (circuit routing feel)
     for f in range(1, NUM_FLOORS):
         r = floor_row[f]
         if r < 3:
             continue
-        # Ceiling side of this floor: rows r+1 (just below the solid floor)
-        for col in range(BORDER_COLS + 3, WORLD_W - BORDER_COLS - 3, 9 + rng_mod(7)):
-            # Only put stalactite where there is no solid FG above
-            if fg_get(col, r - 1) == TILE_EMPTY and bg[col * WORLD_H + (r - 1)] < BG_STAL_BODY:
-                # Drop a 1-2 tile stalactite from the floor underside
-                bg_set(col, r + 1, BG_STAL_BODY)
-                bg_set(col, r + 2, BG_STAL_TIP)
-
-    # ------------------------------------------------------------------
-    # 8. BG Decorations: crystals, water, moss, glows — random spots.
-    # ------------------------------------------------------------------
-    seed_rng(0xCAFE)   # fresh seed for decorations
-    for _ in range(400):
-        col = BORDER_COLS + rng_mod(WORLD_W - 2 * BORDER_COLS)
-        row = 2 + rng_mod(WORLD_H - 4)
-        choice = rng_mod(5)
-        if fg_get(col, row) != TILE_EMPTY:
-            continue
-        if   choice == 0: t = BG_MOSS
-        elif choice == 1: t = BG_CRYSTAL
-        elif choice == 2: t = BG_GLOW
-        elif choice == 3: t = BG_WATER
-        else:             t = BG_MID
-        bg_set(col, row, t)
+        for col in range(BORDER_COLS + 6, WORLD_W - BORDER_COLS - 6, 16 + rng_mod(12)):
+            if (fg_get(col, r + 2) == TILE_EMPTY and
+                    bg_get(col, r + 2) == BG_TRACE_H):
+                bg_set(col, r + 2, BG_T_JUNC)
 
     # ------------------------------------------------------------------
     # 9. Player start position output.
