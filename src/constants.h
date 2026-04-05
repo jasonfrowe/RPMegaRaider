@@ -83,6 +83,33 @@
 #define FG_MODE2_CFG        0x8460U
 #define SPRITE_CFG          0x8480U
 
+// ---------------------------------------------------------------------------
+// Sprite config slot addressing
+//   sizeof(vga_mode4_sprite_t) = 8 bytes on this platform.
+//   Slot 0 = player, slots 1-7 = enemies (contiguous, one xreg_vga_mode call).
+// ---------------------------------------------------------------------------
+#define SPRITE_CFG_SIZE     8u
+#define SPRITE_COUNT        8u
+#define ENEMY_CFG(n)        (SPRITE_CFG + (unsigned)(n) * SPRITE_CFG_SIZE)
+
+// ---------------------------------------------------------------------------
+// Pickup / special FG tile IDs  (above TILE_SOLID_MAX → not solid)
+// ---------------------------------------------------------------------------
+#define TILE_CHARGE_PACK    31
+#define TILE_MEMORY_SHARD   32
+#define TILE_TERMINUS       33
+
+// ---------------------------------------------------------------------------
+// Gameplay tuning
+// ---------------------------------------------------------------------------
+#define EMP_RADIUS_PX           80
+#define EMP_COOLDOWN_FRAMES     90
+#define IMMUNITY_FRAMES         60
+#define LIVES_START             3
+#define SHARDS_NEEDED           5
+#define MAX_ENEMIES             7
+#define ENEMY_RESPAWN_FRAMES    300
+
 // Input / system
 #define GAMEPAD_INPUT       0xFF78U
 #define KEYBOARD_INPUT      0xFFA0U

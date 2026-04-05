@@ -511,6 +511,59 @@ def ladder_bot():
     ])
 
 # =============================================================================
+# Pickup tiles 31-33  —  collectibles (not solid — not in TILE_SOLID range)
+# =============================================================================
+
+def pickup_charge_pack():
+    """Gold lightning bolt on dark substrate — collect to gain an EMP charge."""
+    G = 15   # warm gold
+    C = 10   # bright copper
+    D = 1    # dark basalt substrate
+    return make_tile([
+        [D, D, D, D, D, D, D, D],
+        [D, D, G, G, G, D, D, D],
+        [D, G, G, G, D, D, D, D],
+        [G, G, C, D, D, D, D, D],
+        [D, D, C, C, C, D, D, D],
+        [D, D, D, C, C, G, D, D],
+        [D, D, D, D, G, G, G, D],
+        [D, D, D, D, D, D, D, D],
+    ])
+
+def pickup_memory_shard():
+    """Bright blue crystal fragment — collect 5 to activate the terminus."""
+    B = 13   # crystal blue
+    H = 14   # ice blue highlight
+    D = 1    # dark substrate
+    return make_tile([
+        [D, D, D, H, D, D, D, D],
+        [D, D, H, B, H, D, D, D],
+        [D, H, B, H, B, H, D, D],
+        [H, B, H, H, H, B, H, D],
+        [D, H, B, H, B, H, D, D],
+        [D, D, H, B, H, D, D, D],
+        [D, D, D, H, D, D, D, D],
+        [D, D, D, D, D, D, D, D],
+    ])
+
+def pickup_terminus():
+    """Bright exit beacon — reach this with all 5 shards to escape."""
+    Y = 15   # warm gold outer ring
+    R = 12   # lava red inner ring
+    W = 5    # bright highlight core
+    D = 1    # dark substrate
+    return make_tile([
+        [D, Y, Y, Y, Y, Y, Y, D],
+        [Y, R, R, R, R, R, Y, D],
+        [Y, R, W, W, W, R, Y, D],
+        [Y, R, W, D, W, R, Y, D],
+        [Y, R, W, W, W, R, Y, D],
+        [Y, R, R, R, R, R, Y, D],
+        [D, Y, Y, Y, Y, Y, Y, D],
+        [D, D, D, D, D, D, D, D],
+    ])
+
+# =============================================================================
 # Build 256-tile array
 # =============================================================================
 tiles = [solid_tile(0)] * 256  # default: transparent empty
@@ -550,6 +603,11 @@ tiles[27] = upper_platform_alt()
 tiles[28] = upper_fill_b()
 tiles[29] = upper_fill_crystal()
 tiles[30] = upper_half_platform()
+
+# Pickup tiles: 31-33  (not solid — pickups only)
+tiles[31] = pickup_charge_pack()
+tiles[32] = pickup_memory_shard()
+tiles[33] = pickup_terminus()
 
 # Ladder tiles
 tiles[107] = ladder_top()

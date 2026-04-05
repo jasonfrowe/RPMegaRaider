@@ -30,6 +30,11 @@ void stream_close_files(void);
 // Only valid for tiles that are currently within the loaded window.
 uint8_t stream_read_fg_tile(uint16_t wx, uint16_t wy);
 
+// Write `tile` to world tile (wx, wy) in the XRAM FG ring buffer.
+// Call during VBLANK.  Also records the change so that the tile stays
+// cleared even if the camera scrolls away and the column/row reloads from disk.
+void stream_write_fg_tile(uint16_t wx, uint16_t wy, uint8_t tile);
+
 // Current ring buffer window position (for diagnostics).
 uint16_t stream_get_loaded_left(void);
 uint16_t stream_get_loaded_top(void);

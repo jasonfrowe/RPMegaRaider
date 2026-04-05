@@ -16,6 +16,46 @@
 #define RING_W_MASK  (RING_W - 1)   // 63
 #define RING_H_MASK  (RING_H - 1)   // 31
 
+// ---------------------------------------------------------------------------
+// Cleared-pickup persistence
+// When a pickup tile is collected, we record its world coords.
+// Before any column or row is written to XRAM from disk data, we patch
+// cleared tiles in that slice so they stay empty even after the camera
+// scrolls away and back.
+// ---------------------------------------------------------------------------
+#define MAX_CLEARED_FG 32
+typedef struct { uint16_t wx; uint16_t wy; } cleared_tile_t;
+static cleared_tile_t s_cleared_fg[MAX_CLEARED_FG];
+static uint8_t        s_cleared_fg_count = 0;
+
+// Patch any cleared-pickup tiles in a column staging buffer.
+// col_world: the world column we just loaded into buf[0..RING_H-1].
+// row_start: world row index of buf[0].
+static void patch_cleared_col(uint8_t *buf, uint16_t col_world, uint16_t row_start)
+{
+    uint8_t i;
+    for (i = 0; i < s_cleared_fg_count; i++) {
+        if (s_cleared_fg[i].wx != col_world) continue;
+        uint16_t wy = s_cleared_fg[i].wy;
+        if (wy < row_start || wy >= row_start + RING_H) continue;
+        buf[wy - row_start] = 0;
+    }
+}
+
+// Patch any cleared-pickup tiles in a row staging buffer.
+// row_world: the world row we just loaded into buf[0..RING_W-1].
+// col_start: world col index of buf[0].
+static void patch_cleared_row(uint8_t *buf, uint16_t row_world, uint16_t col_start)
+{
+    uint8_t i;
+    for (i = 0; i < s_cleared_fg_count; i++) {
+        if (s_cleared_fg[i].wy != row_world) continue;
+        uint16_t wx = s_cleared_fg[i].wx;
+        if (wx < col_start || wx >= col_start + RING_W) continue;
+        buf[wx - col_start] = 0;
+    }
+}
+
 static int s_fg_fd = -1;    // column-major: offset = col * WORLD_H + row
 static int s_bg_fd = -1;
 static int s_fg_row_fd = -1; // row-major:    offset = row * WORLD_W + col
@@ -218,6 +258,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             if (c < WORLD_W) {
                 lseek(s_fg_fd, (long)c * WORLD_H + s_fg_loaded_top, SEEK_SET);
                 read(s_fg_fd, s_fg_stage_col, RING_H);
+                patch_cleared_col(s_fg_stage_col, c, s_fg_loaded_top);
                 s_fg_stage_col_idx = c; s_fg_stage_col_row0 = s_fg_loaded_top;
                 s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
             } else { s_fg_loaded_left++; }
@@ -225,6 +266,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             uint16_t c = s_fg_loaded_left - 1;
             lseek(s_fg_fd, (long)c * WORLD_H + s_fg_loaded_top, SEEK_SET);
             read(s_fg_fd, s_fg_stage_col, RING_H);
+            patch_cleared_col(s_fg_stage_col, c, s_fg_loaded_top);
             s_fg_stage_col_idx = c; s_fg_stage_col_row0 = s_fg_loaded_top;
             s_fg_stage_col_delta = -1; s_fg_stage_col_pending = true;
         }
@@ -256,6 +298,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             if (r < WORLD_H) {
                 lseek(s_fg_row_fd, (long)r * WORLD_W + s_fg_loaded_left, SEEK_SET);
                 read(s_fg_row_fd, s_fg_stage_row, RING_W);
+                patch_cleared_row(s_fg_stage_row, r, s_fg_loaded_left);
                 s_fg_stage_row_idx = r; s_fg_stage_row_col0 = s_fg_loaded_left;
                 s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
             } else { s_fg_loaded_top++; }
@@ -263,6 +306,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             uint16_t r = s_fg_loaded_top - 1;
             lseek(s_fg_row_fd, (long)r * WORLD_W + s_fg_loaded_left, SEEK_SET);
             read(s_fg_row_fd, s_fg_stage_row, RING_W);
+            patch_cleared_row(s_fg_stage_row, r, s_fg_loaded_left);
             s_fg_stage_row_idx = r; s_fg_stage_row_col0 = s_fg_loaded_left;
             s_fg_stage_row_delta = -1; s_fg_stage_row_pending = true;
         }
@@ -331,4 +375,25 @@ uint8_t stream_read_fg_tile(uint16_t wx, uint16_t wy)
                             (uint16_t)(wx & RING_W_MASK));
     RIA.step0 = 0;
     return RIA.rw0;
+}
+
+void stream_write_fg_tile(uint16_t wx, uint16_t wy, uint8_t tile)
+{
+    // Write directly to XRAM ring buffer (call during VBLANK).
+    RIA.addr0 = (uint16_t)(FG_TILEMAP_BASE +
+                            (uint16_t)((wy & RING_H_MASK) * RING_W) +
+                            (uint16_t)(wx & RING_W_MASK));
+    RIA.step0 = 0;
+    RIA.rw0   = tile;
+
+    // Record cleared pickups so they persist when the ring reloads from disk.
+    if (tile == 0u && s_cleared_fg_count < MAX_CLEARED_FG) {
+        uint8_t i;
+        for (i = 0u; i < s_cleared_fg_count; i++) {
+            if (s_cleared_fg[i].wx == wx && s_cleared_fg[i].wy == wy) return; // already tracked
+        }
+        s_cleared_fg[s_cleared_fg_count].wx = wx;
+        s_cleared_fg[s_cleared_fg_count].wy = wy;
+        s_cleared_fg_count++;
+    }
 }

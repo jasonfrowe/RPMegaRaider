@@ -20,11 +20,12 @@ endif()
 add_executable(RPMegaRaider)
 
 # Assets embedded in the ROM (auto-loaded into XRAM at boot):
-rp6502_asset(RPMegaRaider 0x10000 images/RunningMan.bin)  # Player sprite  → XRAM 0x0000
-rp6502_asset(RPMegaRaider 0x13400 images/FG_TILES.BIN)    # FG tileset     → XRAM 0x3400
-rp6502_asset(RPMegaRaider 0x15400 images/BG_TILES.BIN)    # BG tileset     → XRAM 0x5400
-rp6502_asset(RPMegaRaider 0x18400 images/FG_PAL.BIN)      # FG palette     → XRAM 0x8400
-rp6502_asset(RPMegaRaider 0x18420 images/BG_PAL.BIN)      # BG palette     → XRAM 0x8420
+rp6502_asset(RPMegaRaider 0x10000 images/RunningMan.bin)    # Player sprite  → XRAM 0x0000
+rp6502_asset(RPMegaRaider 0x12400 images/EnemySprites.bin)  # Enemy sprites  → XRAM 0x2400
+rp6502_asset(RPMegaRaider 0x13400 images/FG_TILES.BIN)      # FG tileset     → XRAM 0x3400
+rp6502_asset(RPMegaRaider 0x15400 images/BG_TILES.BIN)      # BG tileset     → XRAM 0x5400
+rp6502_asset(RPMegaRaider 0x18400 images/FG_PAL.BIN)        # FG palette     → XRAM 0x8400
+rp6502_asset(RPMegaRaider 0x18420 images/BG_PAL.BIN)        # BG palette     → XRAM 0x8420
 rp6502_asset(RPMegaRaider help    src/help.txt)
 
 # External USB files (too large to embed, streamed at runtime):
@@ -43,4 +44,5 @@ target_sources(RPMegaRaider PRIVATE
     src/input.c
     src/runningman.c
     src/stream.c
+    src/enemy.c
 )

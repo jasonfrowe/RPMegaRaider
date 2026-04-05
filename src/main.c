@@ -5,6 +5,7 @@
 #include "input.h"
 #include "runningman.h"
 #include "stream.h"
+#include "enemy.h"
 
 // ---------------------------------------------------------------------------
 // Graphics initialisation
@@ -56,15 +57,31 @@ static void init_graphics(void)
     printf("xreg_vga_mode FG (plane 1): %d\n", rc);
     if (rc < 0) return;
 
-    // --- Player sprite — plane 2 (on top of both tile layers) ---
-    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px,           0);
-    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, y_pos_px,           0);
-    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, xram_sprite_ptr,    PLAYER_SPRITE_BASE);
-    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, log_size,           4); // 16×16
+    // --- Sprite layer — plane 2 (player + 7 enemies, contiguous config block) ---
+    // Slot 0: player
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px,             0);
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, y_pos_px,             0);
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, xram_sprite_ptr,      PLAYER_SPRITE_BASE);
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, log_size,             4); // 16×16
     xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, has_opacity_metadata, false);
 
-    rc = xreg_vga_mode(4, 0, SPRITE_CFG, 1, 2, 0, 0);
-    printf("xreg_vga_mode sprite (plane 2): %d\n", rc);
+    // Slots 1-7: enemies — hidden off-screen initially, positions set by enemy_init
+    {
+        uint8_t i;
+        for (i = 1; i < SPRITE_COUNT; i++) {
+            unsigned cfg = ENEMY_CFG(i);
+            xram0_struct_set(cfg, vga_mode4_sprite_t, x_pos_px,             -32);
+            xram0_struct_set(cfg, vga_mode4_sprite_t, y_pos_px,             -32);
+            xram0_struct_set(cfg, vga_mode4_sprite_t, xram_sprite_ptr,      ENEMY_SPRITE_BASE);
+            xram0_struct_set(cfg, vga_mode4_sprite_t, log_size,             4); // 16×16
+            xram0_struct_set(cfg, vga_mode4_sprite_t, has_opacity_metadata, false);
+        }
+    }
+
+    // Register all SPRITE_COUNT sprites with one xreg_vga_mode call.
+    // LENGTH = SPRITE_COUNT covers slots 0..SPRITE_COUNT-1 from SPRITE_CFG.
+    rc = xreg_vga_mode(4, 0, SPRITE_CFG, SPRITE_COUNT, 2, 0, 0);
+    printf("xreg_vga_mode sprites x%u (plane 2): %d\n", (unsigned)SPRITE_COUNT, rc);
     if (rc < 0) return;
 
     puts("init_graphics OK");
@@ -109,6 +126,9 @@ int main(void)
         stream_init(s_cam_x, s_cam_y);
     }
 
+    // Load enemy spawn positions from SPAWNS.BIN and initialise AI
+    enemy_init();
+
     while (true) {
         // Spin-wait for vsync.  Use the idle time to read USB tile data into
         // the staging buffer (safe during active scan — no XRAM writes).
@@ -119,6 +139,8 @@ int main(void)
         // VBLANK: flush staged tile data + update all hardware registers.
         // Confining all XRAM writes to this window eliminates screen tearing.
         stream_commit();
+        runningman_flush_tile_writes();        // apply any collected pickup tile clears
+        enemy_draw_all(s_cam_x, s_cam_y);     // position enemy sprites in XRAM
         {
             // FG scrolls 1:1 with the camera.
             int16_t fg_x = -(int16_t)(s_cam_x % (RING_W * TILE_W));
@@ -143,6 +165,7 @@ int main(void)
         // ACTIVE SCAN: physics runs here — no XRAM writes.
         handle_input();
         runningman_update();
+        enemy_update_all(runningman_get_x(), runningman_get_y());
 
         // Compute camera for next frame (used by prefetch + commit above).
         {

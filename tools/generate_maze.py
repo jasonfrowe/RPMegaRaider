@@ -6,12 +6,20 @@ Produces column-major binary files (800 cols × 600 rows):
   MAZE_FG.BIN   480,000 bytes — collision/FG tile layer
   MAZE_BG.BIN   480,000 bytes — decorative BG tile layer
 
+Also produces:
+  SPAWNS.BIN    1 + N×5 bytes — enemy spawn positions
+                  1 byte count, then N records of (uint16_t x_px, uint16_t y_px, uint8 type)
+                  type: 0=Crawler  1=Flyer  2=Turret
+
 Column-major layout: byte at offset (col * WORLD_H + row) is tile at (col, row).
 This is optimal for the horizontal-scroll streaming engine (1 seek + 1 read per column).
 
 FG tile meanings (match constants.h and generate_fg_tiles.py):
   0         = empty air (transparent, shows BG through)
   1-30      = solid wall / platform (blocks player); zone-specific appearance
+  31        = charge pack pickup (collect for EMP charge)
+  32        = memory shard pickup (collect 5 to unlock terminus)
+  33        = terminus (reach with all 5 shards to WIN)
   107-110   = ladder tiles (climbable shafts)
 
 FG zone layout (matched to generate_fg_tiles.py):
@@ -38,7 +46,7 @@ BG tile meanings (generate_bg_tiles.py — circuit board theme):
   15  BG_CROSS          — cross junction
 """
 
-import random, os
+import random, struct, os
 
 # ---------------------------------------------------------------------------
 # World constants
@@ -66,6 +74,16 @@ TILE_LADDER_TOP  = 107
 TILE_LADDER_MID1 = 108
 TILE_LADDER_MID2 = 109
 TILE_LADDER_BOT  = 110
+
+# Pickup / special tile IDs
+TILE_CHARGE_PACK  = 31
+TILE_MEMORY_SHARD = 32
+TILE_TERMINUS     = 33
+
+# Enemy spawn types
+SPAWN_CRAWLER = 0
+SPAWN_FLYER   = 1
+SPAWN_TURRET  = 2
 
 # FG zone boundaries (world row)
 ZONE_DEEP_MIN  = 400   # rows >= 400: volcanic deep
@@ -349,6 +367,100 @@ def generate():
                 bg_set(col, r + 2, BG_T_JUNC)
 
     # ------------------------------------------------------------------
+    # 8. Pickup and spawn placement.
+    # ------------------------------------------------------------------
+    seed_rng(0xDEAD)   # fresh seed for pickup / spawn placement
+
+    # --- 5 Memory Shards on high floors (floors 22-28) ---
+    shard_floors = [22, 23, 24, 25, 26]
+    for f in shard_floors:
+        if f >= NUM_FLOORS:
+            continue
+        r = floor_row[f]
+        if r < 2:
+            continue
+        # Place shard one tile above the platform surface (row r-1)
+        shard_row = r - 1
+        col = BORDER_COLS + 10 + rng_mod(WORLD_W - 2 * BORDER_COLS - 20)
+        # Skip if a ladder or gap is here
+        if fg_get(col, shard_row) == TILE_EMPTY and fg_get(col, r) != TILE_EMPTY:
+            fg_set(col, shard_row, TILE_MEMORY_SHARD)
+
+    # --- 1 Terminus near top-center (floor NUM_FLOORS-2) ---
+    top_f = NUM_FLOORS - 2
+    if top_f >= 0 and top_f < NUM_FLOORS:
+        term_row = floor_row[top_f] - 1
+        term_col = WORLD_W // 2 + rng_mod(40) - 20
+        if fg_get(term_col, term_row) == TILE_EMPTY and fg_get(term_col, floor_row[top_f]) != TILE_EMPTY:
+            fg_set(term_col, term_row, TILE_TERMINUS)
+
+    # --- ~22 Charge Packs scattered on mid/deep floors (floors 1-18) ---
+    charge_target = 22
+    placed_charges = 0
+    attempts = 0
+    while placed_charges < charge_target and attempts < 2000:
+        attempts += 1
+        f = 1 + rng_mod(18)
+        if f >= NUM_FLOORS:
+            continue
+        r = floor_row[f]
+        if r < 2:
+            continue
+        pack_row = r - 1
+        col = BORDER_COLS + 5 + rng_mod(WORLD_W - 2 * BORDER_COLS - 10)
+        if fg_get(col, pack_row) == TILE_EMPTY and fg_get(col, r) != TILE_EMPTY:
+            fg_set(col, pack_row, TILE_CHARGE_PACK)
+            placed_charges += 1
+
+    # --- Enemy spawns ---
+    # Place 3 Crawlers on mid floors (floors 3-14), spaced across world
+    # Place 2 Flyers in open mid-air between floors
+    # Place 2 Turrets on elevated floors (floors 15-20)
+    spawns = []   # list of (x_px, y_px, type)
+
+    crawler_floors = [3, 8, 13]
+    crawler_col_offsets = [WORLD_W // 5, WORLD_W * 2 // 5, WORLD_W * 3 // 5]
+    for i, f in enumerate(crawler_floors):
+        if f >= NUM_FLOORS:
+            continue
+        r = floor_row[f]
+        if r < 2:
+            continue
+        col = crawler_col_offsets[i] + rng_mod(40) - 20
+        col = max(BORDER_COLS + 4, min(WORLD_W - BORDER_COLS - 5, col))
+        x_px = col * 8
+        y_px = (r - 2) * 8   # stand 2 tiles above platform surface (sprite is 16px = 2 tiles)
+        spawns.append((x_px, y_px, SPAWN_CRAWLER))
+
+    flyer_floors = [6, 16]
+    flyer_col_offsets = [WORLD_W // 3, WORLD_W * 2 // 3]
+    for i, f in enumerate(flyer_floors):
+        if f + 1 >= NUM_FLOORS:
+            continue
+        r_bot = floor_row[f]
+        r_top = floor_row[f + 1]
+        mid_row = (r_bot + r_top) // 2
+        col = flyer_col_offsets[i] + rng_mod(60) - 30
+        col = max(BORDER_COLS + 4, min(WORLD_W - BORDER_COLS - 5, col))
+        x_px = col * 8
+        y_px = mid_row * 8
+        spawns.append((x_px, y_px, SPAWN_FLYER))
+
+    turret_floors = [15, 19]
+    turret_col_offsets = [WORLD_W * 3 // 4, WORLD_W // 4]
+    for i, f in enumerate(turret_floors):
+        if f >= NUM_FLOORS:
+            continue
+        r = floor_row[f]
+        if r < 2:
+            continue
+        col = turret_col_offsets[i] + rng_mod(30) - 15
+        col = max(BORDER_COLS + 4, min(WORLD_W - BORDER_COLS - 5, col))
+        x_px = col * 8
+        y_px = (r - 2) * 8
+        spawns.append((x_px, y_px, SPAWN_TURRET))
+
+    # ------------------------------------------------------------------
     # 9. Player start position output.
     # ------------------------------------------------------------------
     # Player starts just above floor[1] (one floor up from ground).
@@ -357,12 +469,12 @@ def generate():
     start_x = 10 * 8                      # pixel x (tile column 10)
     start_y = (floor_row[1] - 2) * 8     # 2 tiles above floor[1]
 
-    return start_x, start_y
+    return start_x, start_y, spawns
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-start_x, start_y = generate()
+start_x, start_y, spawns = generate()
 
 out_dir = os.path.dirname(__file__) or '.'
 out_root = os.path.join(out_dir, '..', 'images')
@@ -391,5 +503,18 @@ print(f"MAZE_FG_ROWS.BIN: {len(fg_rows)} bytes")
 with open(os.path.join(out_root, 'MAZE_BG_ROWS.BIN'), 'wb') as f:
     f.write(bg_rows)
 print(f"MAZE_BG_ROWS.BIN: {len(bg_rows)} bytes")
+
+# Write SPAWNS.BIN: uint8 count, then N × (uint16 x_px, uint16 y_px, uint8 type)
+spawns_data = bytearray()
+spawns_data.append(len(spawns))
+for (x_px, y_px, typ) in spawns:
+    spawns_data.extend(struct.pack('<HHB', x_px, y_px, typ))
+
+with open(os.path.join(out_root, 'SPAWNS.BIN'), 'wb') as f:
+    f.write(spawns_data)
+print(f"SPAWNS.BIN: {len(spawns_data)} bytes ({len(spawns)} enemy spawns)")
+for i, (x_px, y_px, typ) in enumerate(spawns):
+    names = ['Crawler', 'Flyer', 'Turret']
+    print(f"  [{i}] {names[typ]:8s}  x={x_px:5d}px  y={y_px:5d}px")
 
 print(f"Player start: ({start_x}, {start_y}) px  — update player_start_x/y in runningman.c if regenerating")

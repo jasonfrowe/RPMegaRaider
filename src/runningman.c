@@ -1,10 +1,12 @@
 #include <rp6502.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include "constants.h"
 #include "input.h"
 #include "runningman.h"
 #include "stream.h"
+#include "enemy.h"
 
 int16_t player_start_x = 80;
 int16_t player_start_y = 4336;
@@ -65,6 +67,21 @@ static int8_t   last_dir;
 static uint8_t  decel_tick;
 static bool     on_ladder;
 static uint16_t ladder_col;
+
+// ---------------------------------------------------------------------------
+// Gameplay state
+// ---------------------------------------------------------------------------
+static uint8_t  charge_count    = 0;
+static uint8_t  shard_count     = 0;
+static uint8_t  lives           = LIVES_START;
+static uint8_t  immunity_frames = 0;
+static uint8_t  emp_cooldown    = 0;
+static bool     emp_btn_prev    = false;
+static bool     game_over       = false;
+static bool     game_won        = false;
+static bool     pickup_pending  = false;
+static uint16_t pickup_wx       = 0;
+static uint16_t pickup_wy       = 0;
 
 // ---------------------------------------------------------------------------
 // Tile helpers
@@ -195,6 +212,8 @@ void runningman_init(void)
 
 void runningman_update(void)
 {
+    if (game_over || game_won) return;
+
     bool up       = is_action_pressed(0, ACTION_THRUST);
     bool down     = is_action_pressed(0, ACTION_REVERSE_THRUST);
     bool left     = is_action_pressed(0, ACTION_ROTATE_LEFT);
@@ -441,5 +460,72 @@ void runningman_update(void)
         } else if (x_vel == 0 && !airborne) {
             set_frame((current_frame == 8u) ? 9u : 8u);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // EMP burst (B button / ACTION_SUPER_FIRE)
+    // -----------------------------------------------------------------------
+    {
+        bool emp_btn = is_action_pressed(0, ACTION_SUPER_FIRE);
+        if (emp_btn && !emp_btn_prev && charge_count > 0u && emp_cooldown == 0u) {
+            charge_count--;
+            emp_cooldown = EMP_COOLDOWN_FRAMES;
+            enemy_kill_in_radius((int16_t)(x_pos + 8), (int16_t)(y_pos + 8), EMP_RADIUS_PX);
+            printf("EMP! charges=%u\n", (unsigned)charge_count);
+        }
+        emp_btn_prev = emp_btn;
+        if (emp_cooldown > 0u) --emp_cooldown;
+    }
+
+    // -----------------------------------------------------------------------
+    // Pickup detection (tile under player center)
+    // -----------------------------------------------------------------------
+    {
+        uint16_t cx = (uint16_t)((x_pos + 8) / TILE_W);
+        uint16_t cy = (uint16_t)((y_pos + 8) / TILE_H);
+        uint8_t  t  = read_tile(cx, cy);
+        if (t == TILE_CHARGE_PACK) {
+            if (charge_count < 9u) charge_count++;
+            printf("Charge! count=%u\n", (unsigned)charge_count);
+            pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
+        } else if (t == TILE_MEMORY_SHARD) {
+            shard_count++;
+            printf("Shard! %u/%u\n", (unsigned)shard_count, (unsigned)SHARDS_NEEDED);
+            pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
+        } else if (t == TILE_TERMINUS && shard_count >= SHARDS_NEEDED) {
+            game_won = true;
+            puts("YOU ESCAPED! Mission complete.");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Enemy collision (only when not immune)
+    // -----------------------------------------------------------------------
+    if (immunity_frames > 0u) {
+        --immunity_frames;
+    } else if (enemy_overlaps_player(x_pos, y_pos)) {
+        if (lives > 0u) --lives;
+        immunity_frames = IMMUNITY_FRAMES;
+        printf("HIT! lives=%u\n", (unsigned)lives);
+        if (lives == 0u) { game_over = true; puts("GAME OVER"); }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gameplay getters
+// ---------------------------------------------------------------------------
+uint8_t runningman_get_charge(void) { return charge_count; }
+uint8_t runningman_get_shards(void) { return shard_count; }
+uint8_t runningman_get_lives(void)  { return lives; }
+bool    runningman_is_alive(void)   { return !game_over; }
+
+// ---------------------------------------------------------------------------
+// Flush pending tile clears to XRAM (call from VBLANK only)
+// ---------------------------------------------------------------------------
+void runningman_flush_tile_writes(void)
+{
+    if (pickup_pending) {
+        stream_write_fg_tile(pickup_wx, pickup_wy, TILE_EMPTY);
+        pickup_pending = false;
     }
 }
