@@ -21,28 +21,41 @@ static int s_bg_fd = -1;
 static int s_fg_row_fd = -1; // row-major:    offset = row * WORLD_W + col
 static int s_bg_row_fd = -1;
 
-// Top-left world-tile coordinates of the currently loaded ring-buffer window.
-static uint16_t s_loaded_left = 0;
-static uint16_t s_loaded_top  = 0;
+// FG and BG are tracked independently.
+// BG camera runs at half the FG camera speed (parallax), so it needs
+// different world columns/rows loaded into BG_TILEMAP_BASE.
+static uint16_t s_fg_loaded_left = 0;
+static uint16_t s_fg_loaded_top  = 0;
+static uint16_t s_bg_loaded_left = 0;
+static uint16_t s_bg_loaded_top  = 0;
 
 // ---------------------------------------------------------------------------
-// Staging buffers — USB reads happen during vsync spin-wait (stream_prefetch);
-// XRAM writes happen at vsync in stream_commit.  Each holds at most one
-// pending column or row per vsync period.
+// Staging buffers — USB reads during vsync spin-wait; XRAM writes at vblank.
+// FG and BG each have an independent column slot and row slot.
 // ---------------------------------------------------------------------------
-static uint8_t  s_stage_fg_col[RING_H];
-static uint8_t  s_stage_bg_col[RING_H];
-static uint16_t s_stage_col_idx;       // world col being staged
-static uint16_t s_stage_col_row0;      // s_loaded_top at time of prefetch
-static int8_t   s_stage_col_delta;     // +1 right, -1 left
-static bool     s_stage_col_pending = false;
+static uint8_t  s_fg_stage_col[RING_H];
+static uint16_t s_fg_stage_col_idx;
+static uint16_t s_fg_stage_col_row0;
+static int8_t   s_fg_stage_col_delta;
+static bool     s_fg_stage_col_pending = false;
 
-static uint8_t  s_stage_fg_row[RING_W];
-static uint8_t  s_stage_bg_row[RING_W];
-static uint16_t s_stage_row_idx;       // world row being staged
-static uint16_t s_stage_row_col0;      // s_loaded_left at time of prefetch
-static int8_t   s_stage_row_delta;     // +1 down, -1 up
-static bool     s_stage_row_pending = false;
+static uint8_t  s_bg_stage_col[RING_H];
+static uint16_t s_bg_stage_col_idx;
+static uint16_t s_bg_stage_col_row0;
+static int8_t   s_bg_stage_col_delta;
+static bool     s_bg_stage_col_pending = false;
+
+static uint8_t  s_fg_stage_row[RING_W];
+static uint16_t s_fg_stage_row_idx;
+static uint16_t s_fg_stage_row_col0;
+static int8_t   s_fg_stage_row_delta;
+static bool     s_fg_stage_row_pending = false;
+
+static uint8_t  s_bg_stage_row[RING_W];
+static uint16_t s_bg_stage_row_idx;
+static uint16_t s_bg_stage_row_col0;
+static int8_t   s_bg_stage_row_delta;
+static bool     s_bg_stage_row_pending = false;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -99,38 +112,21 @@ static void write_ring_row(unsigned tilemap_base, uint16_t world_row,
     }
 }
 
-// Load column world_col, rows [row_start, row_start + RING_H) from both maze
-// files and scatter them into the ring buffers at the correct ring rows.
-static void load_column(uint16_t world_col, uint16_t row_start)
+// Direct-load helpers used only during stream_init (before display is active).
+static void load_fg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    long offset = (long)world_col * WORLD_H + row_start;
-
-    lseek(s_fg_fd, offset, SEEK_SET);
+    lseek(s_fg_fd, (long)world_col * WORLD_H + row_start, SEEK_SET);
     read(s_fg_fd, buf, RING_H);
     write_ring_col(FG_TILEMAP_BASE, world_col, row_start, buf);
-
-    lseek(s_bg_fd, offset, SEEK_SET);
-    read(s_bg_fd, buf, RING_H);
-    write_ring_col(BG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
-// Read row world_row into the staging buffer (USB reads only, no XRAM writes).
-// Column-major layout: each tile is 1 byte at offset (col * WORLD_H + world_row),
-// so loading a full row requires RING_W separate seeks — done during prefetch.
-// Read row world_row into the staging buffer using the row-major files
-// (1 seek + RING_W contiguous bytes each, same cost as a column read).
-static void stage_row_from_usb(uint16_t world_row, uint16_t col_start, int8_t delta)
+static void load_bg_column(uint16_t world_col, uint16_t row_start)
 {
-    long offset = (long)world_row * WORLD_W + col_start;
-    lseek(s_fg_row_fd, offset, SEEK_SET);
-    read(s_fg_row_fd, s_stage_fg_row, RING_W);
-    lseek(s_bg_row_fd, offset, SEEK_SET);
-    read(s_bg_row_fd, s_stage_bg_row, RING_W);
-    s_stage_row_idx     = world_row;
-    s_stage_row_col0    = col_start;
-    s_stage_row_delta   = delta;
-    s_stage_row_pending = true;
+    uint8_t buf[RING_H];
+    lseek(s_bg_fd, (long)world_col * WORLD_H + row_start, SEEK_SET);
+    read(s_bg_fd, buf, RING_H);
+    write_ring_col(BG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,33 +167,31 @@ int stream_open_files(void)
 
 void stream_init(int16_t cam_x_px, int16_t cam_y_px)
 {
-    // Clamp camera to valid range
     if (cam_x_px < 0) cam_x_px = 0;
     if (cam_y_px < 0) cam_y_px = 0;
 
-    s_loaded_left = (uint16_t)(cam_x_px / TILE_W);
-    s_loaded_top  = (uint16_t)(cam_y_px / TILE_H);
-
-    printf("stream_init: cam_px=(%d,%d) tile=(%u,%u) ring_row0=%u\n",
-           cam_x_px, cam_y_px, s_loaded_left, s_loaded_top,
-           (unsigned)(s_loaded_top & RING_H_MASK));
-
-    // Fill the entire ring buffer for this window
+    // FG ring: loaded at 1:1 camera position.
+    s_fg_loaded_left = (uint16_t)(cam_x_px / TILE_W);
+    s_fg_loaded_top  = (uint16_t)(cam_y_px / TILE_H);
     for (uint8_t i = 0; i < RING_W; i++) {
-        uint16_t col = s_loaded_left + i;
+        uint16_t col = s_fg_loaded_left + i;
         if (col < WORLD_W)
-            load_column(col, s_loaded_top);
+            load_fg_column(col, s_fg_loaded_top);
     }
 
-    // Sanity-check: print a few tile values from the loaded buffer
-    printf("stream_init done. ring tiles at row0: col0=%u col2=%u col10=%u\n",
-           (unsigned)stream_read_fg_tile(s_loaded_left,   s_loaded_top),
-           (unsigned)stream_read_fg_tile(s_loaded_left+2, s_loaded_top),
-           (unsigned)stream_read_fg_tile(s_loaded_left+10, s_loaded_top));
-    printf("  ground row tiles: col0=%u col2=%u col10=%u\n",
-           (unsigned)stream_read_fg_tile(s_loaded_left,   s_loaded_top+16),
-           (unsigned)stream_read_fg_tile(s_loaded_left+2, s_loaded_top+16),
-           (unsigned)stream_read_fg_tile(s_loaded_left+10, s_loaded_top+16));
+    // BG ring: loaded at half camera position (parallax).
+    int16_t bg_cam_x = cam_x_px / 2;
+    int16_t bg_cam_y = cam_y_px / 2;
+    s_bg_loaded_left = (uint16_t)(bg_cam_x / TILE_W);
+    s_bg_loaded_top  = (uint16_t)(bg_cam_y / TILE_H);
+    for (uint8_t i = 0; i < RING_W; i++) {
+        uint16_t col = s_bg_loaded_left + i;
+        if (col < WORLD_W)
+            load_bg_column(col, s_bg_loaded_top);
+    }
+
+    printf("stream_init: fg_tile=(%u,%u) bg_tile=(%u,%u)\n",
+           s_fg_loaded_left, s_fg_loaded_top, s_bg_loaded_left, s_bg_loaded_top);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,82 +199,117 @@ void stream_init(int16_t cam_x_px, int16_t cam_y_px)
 // ---------------------------------------------------------------------------
 
 // Phase 1 — call during vsync spin-wait.  Reads USB into staging buffers;
-// idempotent once data is staged (fast return).  No XRAM writes.
+// FG and BG are staged independently since they move at different rates.
 void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
 {
     if (s_fg_fd < 0) return;
     if (cam_x_px < 0) cam_x_px = 0;
     if (cam_y_px < 0) cam_y_px = 0;
 
-    uint16_t cam_tile_x = (uint16_t)(cam_x_px / TILE_W);
-    uint16_t cam_tile_y = (uint16_t)(cam_y_px / TILE_H);
+    uint16_t fg_tx = (uint16_t)(cam_x_px / TILE_W);
+    uint16_t fg_ty = (uint16_t)(cam_y_px / TILE_H);
+    uint16_t bg_tx = (uint16_t)((cam_x_px / 2) / TILE_W);
+    uint16_t bg_ty = (uint16_t)((cam_y_px / 2) / TILE_H);
 
-    // Horizontal: stage one column whenever the camera crosses a tile boundary.
-    if (!s_stage_col_pending) {
-        if (cam_tile_x > s_loaded_left) {
-            // Scrolled right: load the incoming right-edge column.
-            uint16_t new_col = s_loaded_left + RING_W;
-            if (new_col < WORLD_W) {
-                long offset = (long)new_col * WORLD_H + s_loaded_top;
-                lseek(s_fg_fd, offset, SEEK_SET);
-                read(s_fg_fd, s_stage_fg_col, RING_H);
-                lseek(s_bg_fd, offset, SEEK_SET);
-                read(s_bg_fd, s_stage_bg_col, RING_H);
-                s_stage_col_idx     = new_col;
-                s_stage_col_row0    = s_loaded_top;
-                s_stage_col_delta   = 1;
-                s_stage_col_pending = true;
-            } else {
-                s_loaded_left++;  // past world right edge
-            }
-        } else if (s_loaded_left > 0 && cam_tile_x < s_loaded_left) {
-            // Scrolled left: load the incoming left-edge column.
-            uint16_t new_col = s_loaded_left - 1;
-            long offset = (long)new_col * WORLD_H + s_loaded_top;
-            lseek(s_fg_fd, offset, SEEK_SET);
-            read(s_fg_fd, s_stage_fg_col, RING_H);
-            lseek(s_bg_fd, offset, SEEK_SET);
-            read(s_bg_fd, s_stage_bg_col, RING_H);
-            s_stage_col_idx     = new_col;
-            s_stage_col_row0    = s_loaded_top;
-            s_stage_col_delta   = -1;
-            s_stage_col_pending = true;
+    // --- FG horizontal ---
+    if (!s_fg_stage_col_pending) {
+        if (fg_tx > s_fg_loaded_left) {
+            uint16_t c = s_fg_loaded_left + RING_W;
+            if (c < WORLD_W) {
+                lseek(s_fg_fd, (long)c * WORLD_H + s_fg_loaded_top, SEEK_SET);
+                read(s_fg_fd, s_fg_stage_col, RING_H);
+                s_fg_stage_col_idx = c; s_fg_stage_col_row0 = s_fg_loaded_top;
+                s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
+            } else { s_fg_loaded_left++; }
+        } else if (s_fg_loaded_left > 0 && fg_tx < s_fg_loaded_left) {
+            uint16_t c = s_fg_loaded_left - 1;
+            lseek(s_fg_fd, (long)c * WORLD_H + s_fg_loaded_top, SEEK_SET);
+            read(s_fg_fd, s_fg_stage_col, RING_H);
+            s_fg_stage_col_idx = c; s_fg_stage_col_row0 = s_fg_loaded_top;
+            s_fg_stage_col_delta = -1; s_fg_stage_col_pending = true;
         }
     }
 
-    // Vertical: stage one row whenever the camera crosses a tile boundary.
-    if (!s_stage_row_pending) {
-        if (cam_tile_y > s_loaded_top) {
-            // Scrolled down: load the incoming bottom-edge row.
-            uint16_t new_row = s_loaded_top + RING_H;
-            if (new_row < WORLD_H) {
-                stage_row_from_usb(new_row, s_loaded_left, 1);
-            } else {
-                s_loaded_top++;   // past world bottom edge
-            }
-        } else if (s_loaded_top > 0 && cam_tile_y < s_loaded_top) {
-            // Scrolled up: load the incoming top-edge row.
-            stage_row_from_usb(s_loaded_top - 1, s_loaded_left, -1);
+    // --- BG horizontal (half camera speed) ---
+    if (!s_bg_stage_col_pending) {
+        if (bg_tx > s_bg_loaded_left) {
+            uint16_t c = s_bg_loaded_left + RING_W;
+            if (c < WORLD_W) {
+                lseek(s_bg_fd, (long)c * WORLD_H + s_bg_loaded_top, SEEK_SET);
+                read(s_bg_fd, s_bg_stage_col, RING_H);
+                s_bg_stage_col_idx = c; s_bg_stage_col_row0 = s_bg_loaded_top;
+                s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
+            } else { s_bg_loaded_left++; }
+        } else if (s_bg_loaded_left > 0 && bg_tx < s_bg_loaded_left) {
+            uint16_t c = s_bg_loaded_left - 1;
+            lseek(s_bg_fd, (long)c * WORLD_H + s_bg_loaded_top, SEEK_SET);
+            read(s_bg_fd, s_bg_stage_col, RING_H);
+            s_bg_stage_col_idx = c; s_bg_stage_col_row0 = s_bg_loaded_top;
+            s_bg_stage_col_delta = -1; s_bg_stage_col_pending = true;
+        }
+    }
+
+    // --- FG vertical ---
+    if (!s_fg_stage_row_pending) {
+        if (fg_ty > s_fg_loaded_top) {
+            uint16_t r = s_fg_loaded_top + RING_H;
+            if (r < WORLD_H) {
+                lseek(s_fg_row_fd, (long)r * WORLD_W + s_fg_loaded_left, SEEK_SET);
+                read(s_fg_row_fd, s_fg_stage_row, RING_W);
+                s_fg_stage_row_idx = r; s_fg_stage_row_col0 = s_fg_loaded_left;
+                s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
+            } else { s_fg_loaded_top++; }
+        } else if (s_fg_loaded_top > 0 && fg_ty < s_fg_loaded_top) {
+            uint16_t r = s_fg_loaded_top - 1;
+            lseek(s_fg_row_fd, (long)r * WORLD_W + s_fg_loaded_left, SEEK_SET);
+            read(s_fg_row_fd, s_fg_stage_row, RING_W);
+            s_fg_stage_row_idx = r; s_fg_stage_row_col0 = s_fg_loaded_left;
+            s_fg_stage_row_delta = -1; s_fg_stage_row_pending = true;
+        }
+    }
+
+    // --- BG vertical (half camera speed) ---
+    if (!s_bg_stage_row_pending) {
+        if (bg_ty > s_bg_loaded_top) {
+            uint16_t r = s_bg_loaded_top + RING_H;
+            if (r < WORLD_H) {
+                lseek(s_bg_row_fd, (long)r * WORLD_W + s_bg_loaded_left, SEEK_SET);
+                read(s_bg_row_fd, s_bg_stage_row, RING_W);
+                s_bg_stage_row_idx = r; s_bg_stage_row_col0 = s_bg_loaded_left;
+                s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
+            } else { s_bg_loaded_top++; }
+        } else if (s_bg_loaded_top > 0 && bg_ty < s_bg_loaded_top) {
+            uint16_t r = s_bg_loaded_top - 1;
+            lseek(s_bg_row_fd, (long)r * WORLD_W + s_bg_loaded_left, SEEK_SET);
+            read(s_bg_row_fd, s_bg_stage_row, RING_W);
+            s_bg_stage_row_idx = r; s_bg_stage_row_col0 = s_bg_loaded_left;
+            s_bg_stage_row_delta = -1; s_bg_stage_row_pending = true;
         }
     }
 }
 
-// Phase 2 — call once, immediately after vsync fires (vblank window).
-// Flushes staged buffers into the XRAM ring buffers.
+// Phase 2 — call once at vblank.  Flushes all staged buffers into XRAM.
 void stream_commit(void)
 {
-    if (s_stage_col_pending) {
-        write_ring_col(FG_TILEMAP_BASE, s_stage_col_idx, s_stage_col_row0, s_stage_fg_col);
-        write_ring_col(BG_TILEMAP_BASE, s_stage_col_idx, s_stage_col_row0, s_stage_bg_col);
-        if (s_stage_col_delta > 0) s_loaded_left++; else s_loaded_left--;
-        s_stage_col_pending = false;
+    if (s_fg_stage_col_pending) {
+        write_ring_col(FG_TILEMAP_BASE, s_fg_stage_col_idx, s_fg_stage_col_row0, s_fg_stage_col);
+        if (s_fg_stage_col_delta > 0) s_fg_loaded_left++; else s_fg_loaded_left--;
+        s_fg_stage_col_pending = false;
     }
-
-    if (s_stage_row_pending) {
-        write_ring_row(FG_TILEMAP_BASE, s_stage_row_idx, s_stage_row_col0, s_stage_fg_row);
-        write_ring_row(BG_TILEMAP_BASE, s_stage_row_idx, s_stage_row_col0, s_stage_bg_row);
-        if (s_stage_row_delta > 0) s_loaded_top++; else s_loaded_top--;
-        s_stage_row_pending = false;
+    if (s_bg_stage_col_pending) {
+        write_ring_col(BG_TILEMAP_BASE, s_bg_stage_col_idx, s_bg_stage_col_row0, s_bg_stage_col);
+        if (s_bg_stage_col_delta > 0) s_bg_loaded_left++; else s_bg_loaded_left--;
+        s_bg_stage_col_pending = false;
+    }
+    if (s_fg_stage_row_pending) {
+        write_ring_row(FG_TILEMAP_BASE, s_fg_stage_row_idx, s_fg_stage_row_col0, s_fg_stage_row);
+        if (s_fg_stage_row_delta > 0) s_fg_loaded_top++; else s_fg_loaded_top--;
+        s_fg_stage_row_pending = false;
+    }
+    if (s_bg_stage_row_pending) {
+        write_ring_row(BG_TILEMAP_BASE, s_bg_stage_row_idx, s_bg_stage_row_col0, s_bg_stage_row);
+        if (s_bg_stage_row_delta > 0) s_bg_loaded_top++; else s_bg_loaded_top--;
+        s_bg_stage_row_pending = false;
     }
 }
 
@@ -292,8 +321,8 @@ void stream_close_files(void)
     if (s_bg_row_fd >= 0) { close(s_bg_row_fd); s_bg_row_fd = -1; }
 }
 
-uint16_t stream_get_loaded_left(void) { return s_loaded_left; }
-uint16_t stream_get_loaded_top(void)  { return s_loaded_top; }
+uint16_t stream_get_loaded_left(void) { return s_fg_loaded_left; }
+uint16_t stream_get_loaded_top(void)  { return s_fg_loaded_top; }
 
 uint8_t stream_read_fg_tile(uint16_t wx, uint16_t wy)
 {

@@ -120,12 +120,20 @@ int main(void)
         // Confining all XRAM writes to this window eliminates screen tearing.
         stream_commit();
         {
-            int16_t x_scroll = -(int16_t)(s_cam_x % (RING_W * TILE_W));
-            int16_t y_scroll = -(int16_t)(s_cam_y % (RING_H * TILE_H));
-            xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, x_pos_px, x_scroll);
-            xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, y_pos_px, y_scroll);
-            xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, x_pos_px, x_scroll);
-            xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, y_pos_px, y_scroll);
+            // FG scrolls 1:1 with the camera.
+            int16_t fg_x = -(int16_t)(s_cam_x % (RING_W * TILE_W));
+            int16_t fg_y = -(int16_t)(s_cam_y % (RING_H * TILE_H));
+
+            // BG scrolls at half speed — parallax depth effect.
+            // Half-speed means after the camera moves 512px (one ring width),
+            // the BG has only drifted 256px, wrapping seamlessly in the ring.
+            int16_t bg_x = -(int16_t)((s_cam_x / 2) % (RING_W * TILE_W));
+            int16_t bg_y = -(int16_t)((s_cam_y / 2) % (RING_H * TILE_H));
+
+            xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, x_pos_px, bg_x);
+            xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, y_pos_px, bg_y);
+            xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, x_pos_px, fg_x);
+            xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, y_pos_px, fg_y);
             int16_t px = runningman_get_x();
             int16_t py = runningman_get_y();
             xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px, (int16_t)(px - s_cam_x));
