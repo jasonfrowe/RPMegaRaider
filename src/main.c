@@ -4,114 +4,162 @@
 #include "constants.h"
 #include "input.h"
 #include "runningman.h"
-#include "maze.h"
-#include "palette.h"
+#include "stream.h"
 
-unsigned RUNNING_MAN_CONFIG; // set by init_graphics(), used by runningman module
-unsigned MAIN_MAP_CONFIG;    // set by init_graphics(), used by main map module
-
-
+// ---------------------------------------------------------------------------
+// Graphics initialisation
+// ---------------------------------------------------------------------------
 static void init_graphics(void)
 {
+    // 320×240 canvas
+    int rc;
+    rc = xreg_vga_canvas(1);
+    printf("xreg_vga_canvas(1): %d\n", rc);
+    if (rc < 0) return;
 
-    // Select a 320x240 canvas
-    if (xreg_vga_canvas(1) < 0) {
-        puts("xreg_vga_canvas failed");
-        return;
-    }
+    printf("BG_MODE2_CFG=0x%04X FG_MODE2_CFG=0x%04X SPRITE_CFG=0x%04X\n",
+           BG_MODE2_CFG, FG_MODE2_CFG, SPRITE_CFG);
+    printf("FG_TILES=0x%04X BG_TILES=0x%04X FG_TILEMAP=0x%04X BG_TILEMAP=0x%04X\n",
+           FG_TILES_BASE, BG_TILES_BASE, FG_TILEMAP_BASE, BG_TILEMAP_BASE);
+    printf("FG_PAL=0x%04X  BG_PAL=0x%04X\n", FG_PALETTE_BASE, BG_PALETTE_BASE);
 
-    RIA.addr0 = PALETTE_ADDR;
-    RIA.step0 = 1;
-    for (int i = 0; i < 256; i++) {
-        RIA.rw0 = tile_palette[i] & 0xFF;
-        RIA.rw0 = tile_palette[i] >> 8;
-    }
+    // Tilesets and palettes are already in XRAM (loaded from ROM at boot).
 
-    RUNNING_MAN_CONFIG = SPRITE_DATA_END; // Set the configuration address to the end of sprite data
+    // --- BG tile layer — plane 0 (furthest back) ---
+    // OPTIONS: bit3=0 (8×8 tiles), bit[2:0]=2 (4-bit color) => 0x02
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, x_wrap,          true);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, y_wrap,          true);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, x_pos_px,        0);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, y_pos_px,        0);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, width_tiles,     RING_W);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, height_tiles,    RING_H);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, xram_data_ptr,    BG_TILEMAP_BASE);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, xram_palette_ptr, BG_PALETTE_BASE);
+    xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, xram_tile_ptr,    BG_TILES_BASE);
 
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, 0);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, 0);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, xram_sprite_ptr, RUNNING_MAN_DATA);
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, log_size, 4); // 16x16 pixels (2^4 = 16)
-    xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, has_opacity_metadata, false);
+    rc = xreg_vga_mode(2, 0x02, BG_MODE2_CFG, 0, 0, 0);
+    printf("xreg_vga_mode BG (plane 0): %d\n", rc);
+    if (rc < 0) return;
 
-    // Mode 4 args: MODE, OPTIONS, CONFIG, LENGTH, PLANE, BEGIN, END
-    if (xreg_vga_mode(4, 0, RUNNING_MAN_CONFIG, 1, 1, 0, 0) < 0) {
-        puts("xreg_vga_mode failed");
-        return;
-    }
+    // --- FG tile layer — plane 1 (collision + visible terrain) ---
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, x_wrap,          true);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, y_wrap,          true);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, x_pos_px,        0);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, y_pos_px,        0);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, width_tiles,     RING_W);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, height_tiles,    RING_H);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, xram_data_ptr,    FG_TILEMAP_BASE);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, xram_palette_ptr, FG_PALETTE_BASE);
+    xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, xram_tile_ptr,    FG_TILES_BASE);
 
-    MAIN_MAP_CONFIG = RUNNING_MAN_CONFIG + sizeof(vga_mode4_sprite_t); // Place the map config right after the sprite config
+    rc = xreg_vga_mode(2, 0x02, FG_MODE2_CFG, 1, 0, 0);
+    printf("xreg_vga_mode FG (plane 1): %d\n", rc);
+    if (rc < 0) return;
 
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_pos_px, 0);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, width_tiles,  MAIN_MAP_WIDTH_TILES);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, height_tiles, MAIN_MAP_HEIGHT_TILES);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, xram_data_ptr,    MAIN_MAP_TILEMAP_DATA); // tile ID grid
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, xram_palette_ptr, PALETTE_ADDR);
-    xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, xram_tile_ptr,    MAIN_MAP_DATA);        // tile bitmaps
+    // --- Player sprite — plane 2 (on top of both tile layers) ---
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px,           0);
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, y_pos_px,           0);
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, xram_sprite_ptr,    PLAYER_SPRITE_BASE);
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, log_size,           4); // 16×16
+    xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, has_opacity_metadata, false);
 
-    // Mode 2 args: MODE, OPTIONS, CONFIG, PLANE, BEGIN, END
-    // OPTIONS: bit3=0 (8x8 tiles), bit[2:0]=3 (8-bit color index) => 0b0011 = 3
-    // Plane 0 = background fill layer (behind sprite plane 1)
-    if (xreg_vga_mode(2, 0x03, MAIN_MAP_CONFIG, 0, 0, 0) < 0) {
-        puts("xreg_vga_mode failed");
-        return;
-    }
+    rc = xreg_vga_mode(4, 0, SPRITE_CFG, 1, 2, 0, 0);
+    printf("xreg_vga_mode sprite (plane 2): %d\n", rc);
+    if (rc < 0) return;
 
-
+    puts("init_graphics OK");
 }
 
-#define SONG_HZ 60
-uint8_t vsync_last = 0;
-uint16_t timer_accumulator = 0;
-bool music_enabled = true;
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+static uint8_t  vsync_last = 0;
+static int16_t  s_cam_x    = 0;
+static int16_t  s_cam_y    = 0;
+
+// Movement debug: print position + ring state every 30 frames while moving.
+static int16_t  s_prev_px    = 0;
+static int16_t  s_prev_py    = 0;
+static uint8_t  s_dbg_tick   = 0;
 
 int main(void)
 {
-
     xregn(0, 0, 0, 1, KEYBOARD_INPUT);
     xregn(0, 0, 2, 1, GAMEPAD_INPUT);
 
     init_graphics();
-    maze_generate();
     init_input_system();
-    runningman_init();
+
+    // Open maze files and pre-load the streaming ring buffer
+    if (stream_open_files() < 0) return 1;
+
+    runningman_init();   // sets player_start_x / player_start_y
+    printf("player start: (%d, %d) px\n",
+           (int)runningman_get_x(), (int)runningman_get_y());
+
+    {
+        // Initial camera position centred on player
+        int16_t px = runningman_get_x();
+        int16_t py = runningman_get_y();
+        s_cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
+        s_cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
+        if (s_cam_x < 0) s_cam_x = 0;
+        if (s_cam_y < 0) s_cam_y = 0;
+        printf("initial cam: (%d, %d)\n", (int)s_cam_x, (int)s_cam_y);
+        stream_init(s_cam_x, s_cam_y);
+    }
 
     while (true) {
-        // Main game loop
-        // 1. SYNC
-        if (RIA.vsync == vsync_last) continue;
+        // Spin-wait for vsync.  Use the idle time to read USB tile data into
+        // the staging buffer (safe during active scan — no XRAM writes).
+        while (RIA.vsync == vsync_last)
+            stream_prefetch(s_cam_x, s_cam_y);
         vsync_last = RIA.vsync;
 
-        // 2. INPUT
-        handle_input();
+        // VBLANK: flush staged tile data + update all hardware registers.
+        // Confining all XRAM writes to this window eliminates screen tearing.
+        stream_commit();
+        {
+            int16_t x_scroll = -(int16_t)(s_cam_x % (RING_W * TILE_W));
+            int16_t y_scroll = -(int16_t)(s_cam_y % (RING_H * TILE_H));
+            xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, x_pos_px, x_scroll);
+            xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, y_pos_px, y_scroll);
+            xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, x_pos_px, x_scroll);
+            xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, y_pos_px, y_scroll);
+            int16_t px = runningman_get_x();
+            int16_t py = runningman_get_y();
+            xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px, (int16_t)(px - s_cam_x));
+            xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, y_pos_px, (int16_t)(py - s_cam_y));
+        }
 
-        // 3. UPDATE
+        // ACTIVE SCAN: physics runs here — no XRAM writes.
+        handle_input();
         runningman_update();
 
-        // 4. CAMERA — scroll map and reposition sprite in screen space
+        // Compute camera for next frame (used by prefetch + commit above).
         {
             int16_t px = runningman_get_x();
             int16_t py = runningman_get_y();
 
-            int16_t cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
-            int16_t cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
+            // Periodic debug: print when the player is moving, once per ~30 frames.
+            if (++s_dbg_tick >= 30) {
+                s_dbg_tick = 0;
+                if (px != s_prev_px || py != s_prev_py) {
+                    printf("pos(%d,%d) cam(%d,%d) ring_l=%u ring_t=%u\n",
+                           (int)px, (int)py, (int)s_cam_x, (int)s_cam_y,
+                           (unsigned)stream_get_loaded_left(),
+                           (unsigned)stream_get_loaded_top());
+                    s_prev_px = px;
+                    s_prev_py = py;
+                }
+            }
 
-            if (cam_x < 0) cam_x = 0;
-            if (cam_x > (int16_t)(WORLD_W_PX - SCREEN_WIDTH))  cam_x = (int16_t)(WORLD_W_PX - SCREEN_WIDTH);
-            if (cam_y < 0) cam_y = 0;
-            if (cam_y > (int16_t)(WORLD_H_PX - SCREEN_HEIGHT)) cam_y = (int16_t)(WORLD_H_PX - SCREEN_HEIGHT);
-
-            // Sprite position is relative to screen
-            xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, (px - cam_x));
-            xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, (py - cam_y));
-
-            // Map scroll (negative offset shifts visible window right/down)
-            xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, x_pos_px, (-cam_x));
-            xram0_struct_set(MAIN_MAP_CONFIG, vga_mode2_config_t, y_pos_px, (-cam_y));
+            s_cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
+            s_cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
+            if (s_cam_x < 0) s_cam_x = 0;
+            if (s_cam_x > (int16_t)(WORLD_W_PX - SCREEN_WIDTH))  s_cam_x = (int16_t)(WORLD_W_PX - SCREEN_WIDTH);
+            if (s_cam_y < 0) s_cam_y = 0;
+            if (s_cam_y > (int16_t)(WORLD_H_PX - SCREEN_HEIGHT)) s_cam_y = (int16_t)(WORLD_H_PX - SCREEN_HEIGHT);
         }
     }
     return 0;

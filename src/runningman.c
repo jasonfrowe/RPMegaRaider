@@ -4,9 +4,10 @@
 #include "constants.h"
 #include "input.h"
 #include "runningman.h"
+#include "stream.h"
 
-int16_t player_start_x = 32;
-int16_t player_start_y = 128;
+int16_t player_start_x = 80;
+int16_t player_start_y = 4336;
 
 #define FRAME_SIZE      (16u * 16u * 2u)
 #define SPRITE_W        16
@@ -69,12 +70,9 @@ static uint8_t  ladder_col;
 // Tile helpers
 // ---------------------------------------------------------------------------
 
-static uint8_t read_tile(uint8_t col, uint8_t row)
+static uint8_t read_tile(uint16_t col, uint16_t row)
 {
-    if (col >= MAIN_MAP_WIDTH_TILES || row >= MAIN_MAP_HEIGHT_TILES) return 0;
-    RIA.addr0 = MAIN_MAP_TILEMAP_DATA + (unsigned)row * MAIN_MAP_WIDTH_TILES + col;
-    RIA.step0 = 0;
-    return RIA.rw0;
+    return stream_read_fg_tile(col, row);
 }
 
 static bool tile_is_solid(uint8_t t)  { return t >= SOLID_MIN && t <= SOLID_MAX; }
@@ -84,13 +82,13 @@ static bool tile_is_ladder(uint8_t t) { return t >= LADDER_MIN && t <= LADDER_MA
 // Returns the tile column, or 0xFF if none.
 static uint8_t ladder_col_in_body(int16_t px, int16_t py)
 {
-    uint8_t col_l = (uint8_t)((px + HITBOX_X_OFF) / TILE_W);
-    uint8_t col_r = (uint8_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
-    uint8_t row_t = (uint8_t)(py / TILE_H);
-    uint8_t row_b = (uint8_t)((py + SPRITE_H - 1) / TILE_H);
-    for (uint8_t r = row_t; r <= row_b; r++)
-        for (uint8_t c = col_l; c <= col_r; c++)
-            if (tile_is_ladder(read_tile(c, r))) return c;
+    uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    uint16_t row_t = (uint16_t)(py / TILE_H);
+    uint16_t row_b = (uint16_t)((py + SPRITE_H - 1) / TILE_H);
+    for (uint16_t r = row_t; r <= row_b; r++)
+        for (uint16_t c = col_l; c <= col_r; c++)
+            if (tile_is_ladder(read_tile(c, r))) return (uint8_t)(c & 0xFF);
     return 0xFF;
 }
 
@@ -98,11 +96,11 @@ static uint8_t ladder_col_in_body(int16_t px, int16_t py)
 // Returns the tile column, or 0xFF if none.
 static uint8_t ladder_at_feet(int16_t px, int16_t py)
 {
-    uint8_t row   = (uint8_t)((py + SPRITE_H) / TILE_H);
-    uint8_t col_l = (uint8_t)((px + HITBOX_X_OFF) / TILE_W);
-    uint8_t col_r = (uint8_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
-    if (tile_is_ladder(read_tile(col_l, row))) return col_l;
-    if (tile_is_ladder(read_tile(col_r, row))) return col_r;
+    uint16_t row   = (uint16_t)((py + SPRITE_H) / TILE_H);
+    uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    if (tile_is_ladder(read_tile(col_l, row))) return (uint8_t)(col_l & 0xFF);
+    if (tile_is_ladder(read_tile(col_r, row))) return (uint8_t)(col_r & 0xFF);
     return 0xFF;
 }
 
@@ -110,9 +108,9 @@ static uint8_t ladder_at_feet(int16_t px, int16_t py)
 // The topmost rung of every ladder acts as a one-way platform from above.
 static bool feet_on_solid(int16_t px, int16_t py)
 {
-    uint8_t row   = (uint8_t)((py + SPRITE_H) / TILE_H);
-    uint8_t col_l = (uint8_t)((px + HITBOX_X_OFF) / TILE_W);
-    uint8_t col_r = (uint8_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    uint16_t row   = (uint16_t)((py + SPRITE_H) / TILE_H);
+    uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
     uint8_t tl = read_tile(col_l, row);
     uint8_t tr = read_tile(col_r, row);
     if (tile_is_solid(tl) || tile_is_solid(tr)) return true;
@@ -125,33 +123,33 @@ static bool feet_on_solid(int16_t px, int16_t py)
 // Solid tiles only — used during ladder descent so ladder tiles don't block climbing.
 static bool feet_on_hard_ground(int16_t px, int16_t py)
 {
-    uint8_t row   = (uint8_t)((py + SPRITE_H) / TILE_H);
-    uint8_t col_l = (uint8_t)((px + HITBOX_X_OFF) / TILE_W);
-    uint8_t col_r = (uint8_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    uint16_t row   = (uint16_t)((py + SPRITE_H) / TILE_H);
+    uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
     return tile_is_solid(read_tile(col_l, row)) || tile_is_solid(read_tile(col_r, row));
 }
 
 static bool head_hits_solid(int16_t px, int16_t py)
 {
-    uint8_t row   = (uint8_t)(py / TILE_H);
-    uint8_t col_l = (uint8_t)((px + HITBOX_X_OFF) / TILE_W);
-    uint8_t col_r = (uint8_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    uint16_t row   = (uint16_t)(py / TILE_H);
+    uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
     return tile_is_solid(read_tile(col_l, row)) || tile_is_solid(read_tile(col_r, row));
 }
 
 static bool left_wall_hit(int16_t px, int16_t py)
 {
-    uint8_t col   = (uint8_t)((px + HITBOX_X_OFF) / TILE_W);
-    uint8_t row_t = (uint8_t)(py / TILE_H);
-    uint8_t row_b = (uint8_t)((py + SPRITE_H - 1) / TILE_H);
+    uint16_t col   = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t row_t = (uint16_t)(py / TILE_H);
+    uint16_t row_b = (uint16_t)((py + SPRITE_H - 1) / TILE_H);
     return tile_is_solid(read_tile(col, row_t)) || tile_is_solid(read_tile(col, row_b));
 }
 
 static bool right_wall_hit(int16_t px, int16_t py)
 {
-    uint8_t col   = (uint8_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
-    uint8_t row_t = (uint8_t)(py / TILE_H);
-    uint8_t row_b = (uint8_t)((py + SPRITE_H - 1) / TILE_H);
+    uint16_t col   = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    uint16_t row_t = (uint16_t)(py / TILE_H);
+    uint16_t row_b = (uint16_t)((py + SPRITE_H - 1) / TILE_H);
     return tile_is_solid(read_tile(col, row_t)) || tile_is_solid(read_tile(col, row_b));
 }
 
@@ -212,7 +210,7 @@ void runningman_update(void)
             if (col != 0xFF) {
                 on_ladder  = true;
                 ladder_col = col;
-                x_pos = (int16_t)(col * TILE_W) - HITBOX_X_OFF;
+                x_pos = (int16_t)((uint16_t)col * TILE_W) - HITBOX_X_OFF;
                 x_vel = 0; x_frac = 0;
                 y_vel = 0; y_frac = 0;
                 grounded = false;
@@ -223,7 +221,7 @@ void runningman_update(void)
             if (col != 0xFF) {
                 on_ladder  = true;
                 ladder_col = col;
-                x_pos = (int16_t)(col * TILE_W) - HITBOX_X_OFF;
+                x_pos = (int16_t)((uint16_t)col * TILE_W) - HITBOX_X_OFF;
                 x_vel = 0; x_frac = 0;
                 y_vel = 0; y_frac = 0;
                 y_pos += TILE_H;  // drop into the shaft
@@ -254,8 +252,10 @@ void runningman_update(void)
                     if (head_hits_solid(x_pos, new_y)) {
                         y_frac = 0; // ceiling — stop
                     } else if (ladder_col_in_body(x_pos, new_y) == 0xFF) {
-                        // Body cleared top of ladder — snap feet to topmost rung
-                        uint8_t feet_row = (uint8_t)((y_pos + SPRITE_H) / TILE_H);
+                        // Body cleared top of ladder — snap feet to the floor above.
+                        // Use new_y (not the stale y_pos) so we land on the platform
+                        // tile rather than one row inside the shaft.
+                        uint16_t feet_row = (uint16_t)((new_y + SPRITE_H) / TILE_H);
                         y_pos     = (int16_t)(feet_row * TILE_H) - SPRITE_H;
                         y_frac    = 0;
                         on_ladder = false;
@@ -274,7 +274,7 @@ void runningman_update(void)
                     if (new_y > WORLD_H_PX - SPRITE_H)
                         new_y = WORLD_H_PX - SPRITE_H;
                     if (feet_on_hard_ground(x_pos, new_y)) {
-                        uint8_t row = (uint8_t)((new_y + SPRITE_H) / TILE_H);
+                        uint16_t row = (uint16_t)((new_y + SPRITE_H) / TILE_H);
                         y_pos     = (int16_t)(row * TILE_H) - SPRITE_H;
                         y_frac    = 0;
                         on_ladder = false;
@@ -380,7 +380,7 @@ void runningman_update(void)
                 int16_t ny = y_pos + dy;
                 if (ny > WORLD_H_PX - SPRITE_H) ny = WORLD_H_PX - SPRITE_H;
                 if (feet_on_solid(x_pos, ny)) {
-                    uint8_t row = (uint8_t)((ny + SPRITE_H) / TILE_H);
+                    uint16_t row = (uint16_t)((ny + SPRITE_H) / TILE_H);
                     ny       = (int16_t)(row * TILE_H) - SPRITE_H;
                     y_vel    = 0; y_frac = 0;
                     grounded = true;
@@ -390,7 +390,7 @@ void runningman_update(void)
                 int16_t ny = y_pos - dy;
                 if (ny < 0) ny = 0;
                 if (head_hits_solid(x_pos, ny)) {
-                    uint8_t row = (uint8_t)(ny / TILE_H);
+                    uint16_t row = (uint16_t)(ny / TILE_H);
                     ny     = (int16_t)((row + 1u) * TILE_H);
                     y_vel  = 0; y_frac = 0;
                 }

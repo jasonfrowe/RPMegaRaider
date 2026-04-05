@@ -1,53 +1,94 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
-// Screen dimensions
-#define SCREEN_WIDTH 320
-#define SCREEN_HEIGHT 240
-#define SCREEN_HALF_WIDTH (SCREEN_WIDTH / 2)
-#define SCREEN_HALF_HEIGHT (SCREEN_HEIGHT / 2)
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
+#define SCREEN_WIDTH        320
+#define SCREEN_HEIGHT       240
+#define SCREEN_HALF_WIDTH   (SCREEN_WIDTH / 2)
+#define SCREEN_HALF_HEIGHT  (SCREEN_HEIGHT / 2)
 
+// ---------------------------------------------------------------------------
 // Tile dimensions
-#define TILE_W 8
-#define TILE_H 8
+// ---------------------------------------------------------------------------
+#define TILE_W  8
+#define TILE_H  8
 
-// Sprite data configuration
-#define SPRITE_DATA_START        0x0000U // Starting address in XRAM for sprite data
+// ---------------------------------------------------------------------------
+// Streaming ring-buffer dimensions (power-of-2 for cheap modulo via AND)
+// RING_W=64: covers 512px horizontally (screen=320px, slack=192px)
+// RING_H=32: covers 256px vertically  (screen=240px, slack=16px)
+// ---------------------------------------------------------------------------
+#define RING_W  64
+#define RING_H  32
 
-#define RUNNING_MAN_DATA        (SPRITE_DATA_START) // Address for main tile bitmap data
-#define RUNNING_MAN_DATA_SIZE    0x2400U // 9216 bytes (18 frames * 16x16 * 16bpp)
+// ---------------------------------------------------------------------------
+// World dimensions
+// ---------------------------------------------------------------------------
+#define WORLD_W     800     // tiles wide
+#define WORLD_H     600     // tiles tall
+#define WORLD_W_PX  6400    // pixels wide  (800 * 8, fits in int16_t)
+#define WORLD_H_PX  4800    // pixels tall  (600 * 8, fits in int16_t)
 
-#define ENEMY_DATA              (RUNNING_MAN_DATA + RUNNING_MAN_DATA_SIZE) // Address for enemy tile bitmap data
-#define ENEMY_DATA_SIZE         0x1000U // 4096 bytes (8 frames * 16x16 * 16bpp)
+// ---------------------------------------------------------------------------
+// FG tile IDs (collision logic in runningman.c)
+// ---------------------------------------------------------------------------
+#define TILE_EMPTY      0
+#define TILE_SOLID_MIN  1
+#define TILE_SOLID_MAX  10
+#define TILE_LADDER_MIN 107
+#define TILE_LADDER_MAX 110
 
-#define MAIN_MAP_DATA           (ENEMY_DATA + ENEMY_DATA_SIZE) // Address for main tile bitmap data
-#define MAIN_MAP_DATA_SIZE      0x4000U // 16384 bytes (256 tiles * 8x8 * 8bpp)
+// ---------------------------------------------------------------------------
+// XRAM Layout
+//
+//   0x0000  Player sprite     9,216 B  (18 frames × 16×16 × RGB555)
+//   0x2400  Enemy sprites     4,096 B  (8 frames × 16×16 × RGB555, reserved)
+//   0x3400  FG tileset        8,192 B  (256 tiles × 8×8 × 4bpp)
+//   0x5400  BG tileset        8,192 B  (256 tiles × 8×8 × 4bpp)
+//   0x7400  FG tilemap        2,048 B  (64×32 ring buffer, 1B/tile)
+//   0x7C00  BG tilemap        2,048 B  (64×32 ring buffer, 1B/tile)
+//   0x8400  FG palette           32 B  (16 × RGB555 LE)
+//   0x8420  BG palette           32 B
+//   0x8440  BG Mode2 config  ~32 B B  (vga_mode2_config_t)
+//   0x8460  FG Mode2 config      ~32 B
+//   0x8480  Sprite config        ~32 B (vga_mode4_sprite_t)
+//   0xFF78  Gamepads             40 B  (4 × 10B, system region)
+//   0xFFA0  Keyboard             32 B  (HID keycodes bitfield)
+// ---------------------------------------------------------------------------
 
-#define MAIN_MAP_TILEMAP_DATA   (MAIN_MAP_DATA + MAIN_MAP_DATA_SIZE) // Address for Main Map tilemap data
-#define MAIN_MAP_TILEMAP_SIZE   0x7530U // 30000 bytes (200 * 150 tile IDs)
+#define PLAYER_SPRITE_BASE  0x0000U
+#define PLAYER_SPRITE_SIZE  0x2400U
 
-#define SPRITE_DATA_END         (MAIN_MAP_TILEMAP_DATA + MAIN_MAP_TILEMAP_SIZE) // End address for sprite data
+#define ENEMY_SPRITE_BASE   0x2400U
+#define ENEMY_SPRITE_SIZE   0x1000U
 
-// World dimensions in pixels
-#define WORLD_W_PX (MAIN_MAP_WIDTH_TILES * TILE_W)   // 1600
-#define WORLD_H_PX (MAIN_MAP_HEIGHT_TILES * TILE_H)  // 1200
+#define FG_TILES_BASE       0x3400U
+#define FG_TILES_SIZE       0x2000U   // 8192 bytes
 
-// Main Map configuration
-#define MAIN_MAP_WIDTH_TILES 200
-#define MAIN_MAP_HEIGHT_TILES 150
+#define BG_TILES_BASE       0x5400U
+#define BG_TILES_SIZE       0x2000U
 
-// Input buffers
-#define GAMEPAD_INPUT   0xFF78  // 40 bytes for 4 gamepads
-#define KEYBOARD_INPUT  0xFFA0  // 32 bytes keyboard bitfield
+#define FG_TILEMAP_BASE     0x7400U
+#define FG_TILEMAP_SIZE     (RING_W * RING_H)   // 2048 bytes
 
-// Palette and sound
-#define PALETTE_ADDR    0xFC00  // 256-color palette (512 bytes, 0xFC00-0xFDFF)
-#define PALETTE_SIZE    0x0200
+#define BG_TILEMAP_BASE     0x7C00U
+#define BG_TILEMAP_SIZE     (RING_W * RING_H)
 
-#define OPL_ADDR        0xFE00  // OPL2 register page (256 bytes, must be page-aligned)
-#define OPL_SIZE        0x0100
+#define FG_PALETTE_BASE     0x8400U
+#define BG_PALETTE_BASE     0x8420U
 
-extern unsigned RUNNING_MAN_CONFIG;
-extern unsigned MAIN_MAP_CONFIG;
+#define BG_MODE2_CFG        0x8440U
+#define FG_MODE2_CFG        0x8460U
+#define SPRITE_CFG          0x8480U
+
+// Input / system
+#define GAMEPAD_INPUT       0xFF78U
+#define KEYBOARD_INPUT      0xFFA0U
+
+// Compatibility aliases used by runningman.c
+#define RUNNING_MAN_CONFIG  SPRITE_CFG
+#define RUNNING_MAN_DATA    PLAYER_SPRITE_BASE
 
 #endif // CONSTANTS_H

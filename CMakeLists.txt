@@ -18,10 +18,20 @@ else()
 endif()
 
 add_executable(RPMegaRaider)
-rp6502_asset(RPMegaRaider 0x10000 images/RunningMan.bin)
-rp6502_asset(RPMegaRaider 0x13400 images/HomeScreen.bin)
-rp6502_asset(RPMegaRaider 0x17400 images/HomeScreen_map.bin)
-rp6502_asset(RPMegaRaider help src/help.txt)
+
+# Assets embedded in the ROM (auto-loaded into XRAM at boot):
+rp6502_asset(RPMegaRaider 0x10000 images/RunningMan.bin)  # Player sprite  → XRAM 0x0000
+rp6502_asset(RPMegaRaider 0x13400 images/FG_TILES.BIN)    # FG tileset     → XRAM 0x3400
+rp6502_asset(RPMegaRaider 0x15400 images/BG_TILES.BIN)    # BG tileset     → XRAM 0x5400
+rp6502_asset(RPMegaRaider 0x18400 images/FG_PAL.BIN)      # FG palette     → XRAM 0x8400
+rp6502_asset(RPMegaRaider 0x18420 images/BG_PAL.BIN)      # BG palette     → XRAM 0x8420
+rp6502_asset(RPMegaRaider help    src/help.txt)
+
+# External USB files (too large to embed, streamed at runtime):
+#   MAZE_FG.BIN, MAZE_BG.BIN          — column-major (fast horizontal scroll)
+#   MAZE_FG_ROWS.BIN, MAZE_BG_ROWS.BIN — row-major   (fast vertical scroll)
+# Run tools/generate_maze.py to produce all four files, then copy them to the
+# root of the USB drive.
 
 rp6502_executable(RPMegaRaider 
     DATA file 
@@ -32,5 +42,5 @@ target_sources(RPMegaRaider PRIVATE
     src/main.c
     src/input.c
     src/runningman.c
-    src/maze.c
+    src/stream.c
 )
