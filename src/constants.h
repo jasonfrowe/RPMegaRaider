@@ -96,11 +96,29 @@
 #define ENEMY_CFG(n)        (SPRITE_CFG + (unsigned)(n) * SPRITE_CFG_SIZE)
 
 // ---------------------------------------------------------------------------
+// Text overlay (VGA Mode 1, plane 2)
+//   0xA800  Mode1 config struct  ~16 B
+//   0xA810  Text data buffer  3600 B  (40×30 × 3 bytes each: glyph, fg, bg)
+// ---------------------------------------------------------------------------
+#define TEXT_MODE1_CFG      0xA800U
+#define TEXT_DATA_BASE      0xA810U
+#define TEXT_W              40u         // 320px / 8px font = 40 columns
+#define TEXT_H              30u         // 240px / 8px font = 30 rows
+
+// ---------------------------------------------------------------------------
 // Pickup / special FG tile IDs  (above TILE_SOLID_MAX → not solid)
 // ---------------------------------------------------------------------------
 #define TILE_CHARGE_PACK    31
 #define TILE_MEMORY_SHARD   32
 #define TILE_TERMINUS       33
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+#define SCORE_CHARGE_PACK        1000
+#define SCORE_MEMORY_SHARD        500
+#define SCORE_TERMINUS           5000
+#define SCORE_SHIELD_HIT_PENALTY  250
 
 // ---------------------------------------------------------------------------
 // Gameplay tuning

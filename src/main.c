@@ -6,6 +6,7 @@
 #include "runningman.h"
 #include "stream.h"
 #include "enemy.h"
+#include "hud.h"
 
 // ---------------------------------------------------------------------------
 // Graphics initialisation
@@ -15,14 +16,7 @@ static void init_graphics(void)
     // 320×240 canvas
     int rc;
     rc = xreg_vga_canvas(1);
-    printf("xreg_vga_canvas(1): %d\n", rc);
     if (rc < 0) return;
-
-    printf("BG_MODE2_CFG=0x%04X FG_MODE2_CFG=0x%04X SPRITE_CFG=0x%04X\n",
-           BG_MODE2_CFG, FG_MODE2_CFG, SPRITE_CFG);
-    printf("FG_TILES=0x%04X BG_TILES=0x%04X FG_TILEMAP=0x%04X BG_TILEMAP=0x%04X\n",
-           FG_TILES_BASE, BG_TILES_BASE, FG_TILEMAP_BASE, BG_TILEMAP_BASE);
-    printf("FG_PAL=0x%04X  BG_PAL=0x%04X\n", FG_PALETTE_BASE, BG_PALETTE_BASE);
 
     // Tilesets and palettes are already in XRAM (loaded from ROM at boot).
 
@@ -39,7 +33,6 @@ static void init_graphics(void)
     xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, xram_tile_ptr,    BG_TILES_BASE);
 
     rc = xreg_vga_mode(2, 0x02, BG_MODE2_CFG, 0, 0, 0);
-    printf("xreg_vga_mode BG (plane 0): %d\n", rc);
     if (rc < 0) return;
 
     // --- FG tile layer — plane 1 (collision + visible terrain) ---
@@ -54,7 +47,6 @@ static void init_graphics(void)
     xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, xram_tile_ptr,    FG_TILES_BASE);
 
     rc = xreg_vga_mode(2, 0x02, FG_MODE2_CFG, 1, 0, 0);
-    printf("xreg_vga_mode FG (plane 1): %d\n", rc);
     if (rc < 0) return;
 
     // --- Sprite layer — plane 2 (player + 7 enemies, contiguous config block) ---
@@ -91,23 +83,25 @@ static void init_graphics(void)
     // Register all SPRITE_COUNT sprites with one xreg_vga_mode call.
     // LENGTH = SPRITE_COUNT covers slots 0..SPRITE_COUNT-1 from SPRITE_CFG.
     rc = xreg_vga_mode(4, 0, SPRITE_CFG, SPRITE_COUNT, 2, 0, 0);
-    printf("xreg_vga_mode sprites x%u (plane 2): %d\n", (unsigned)SPRITE_COUNT, rc);
     if (rc < 0) return;
 
-    puts("init_graphics OK");
+    hud_init();
 }
+
+// ---------------------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------------------
+typedef enum { STATE_TITLE = 0, STATE_PLAYING = 1, STATE_GAMEOVER = 2 } game_state_t;
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
-static uint8_t  vsync_last = 0;
-static int16_t  s_cam_x    = 0;
-static int16_t  s_cam_y    = 0;
-
-// Movement debug: print position + ring state every 30 frames while moving.
-static int16_t  s_prev_px    = 0;
-static int16_t  s_prev_py    = 0;
-static uint8_t  s_dbg_tick   = 0;
+static uint8_t       vsync_last  = 0;
+static int16_t       s_cam_x     = 0;
+static int16_t       s_cam_y     = 0;
+static game_state_t  s_game_state = STATE_TITLE;
+static bool          s_was_won    = false;
+static bool          s_start_prev = false;
 
 int main(void)
 {
@@ -117,48 +111,41 @@ int main(void)
     init_graphics();
     init_input_system();
 
-    // Open maze files and pre-load the streaming ring buffer
     if (stream_open_files() < 0) return 1;
 
-    runningman_init();   // sets player_start_x / player_start_y
-    printf("player start: (%d, %d) px\n",
-           (int)runningman_get_x(), (int)runningman_get_y());
+    runningman_init();
 
     {
-        // Initial camera position centred on player
         int16_t px = runningman_get_x();
         int16_t py = runningman_get_y();
         s_cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
         s_cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
         if (s_cam_x < 0) s_cam_x = 0;
         if (s_cam_y < 0) s_cam_y = 0;
-        printf("initial cam: (%d, %d)\n", (int)s_cam_x, (int)s_cam_y);
         stream_init(s_cam_x, s_cam_y);
     }
 
-    // Load enemy spawn positions from SPAWNS.BIN and initialise AI
     enemy_init();
 
+    // Start on title screen
+    s_game_state = STATE_TITLE;
+    hud_draw_title_screen(RIA.vsync);
+
     while (true) {
-        // Spin-wait for vsync.  Use the idle time to read USB tile data into
-        // the staging buffer (safe during active scan — no XRAM writes).
+        // Spin-wait for vsync; prefetch maze data during idle scan time.
         while (RIA.vsync == vsync_last)
             stream_prefetch(s_cam_x, s_cam_y);
         vsync_last = RIA.vsync;
 
-        // VBLANK: flush staged tile data + update all hardware registers.
-        // Confining all XRAM writes to this window eliminates screen tearing.
+        // ------------------------------------------------------------------
+        // VBLANK: all XRAM writes happen here.
+        // ------------------------------------------------------------------
         stream_commit();
-        runningman_flush_tile_writes();        // apply any collected pickup tile clears
-        enemy_draw_all(s_cam_x, s_cam_y);     // position enemy sprites in XRAM
+        runningman_flush_tile_writes();
+        enemy_draw_all(s_cam_x, s_cam_y);
         {
-            // FG scrolls 1:1 with the camera.
             int16_t fg_x = -(int16_t)(s_cam_x % (RING_W * TILE_W));
             int16_t fg_y = -(int16_t)(s_cam_y % (RING_H * TILE_H));
-
-            // BG scrolls at half speed — parallax depth effect.
-            // Half-speed means after the camera moves 512px (one ring width),
-            // the BG has only drifted 256px, wrapping seamlessly in the ring.
             int16_t bg_x = -(int16_t)((s_cam_x / 2) % (RING_W * TILE_W));
             int16_t bg_y = -(int16_t)((s_cam_y / 2) % (RING_H * TILE_H));
 
@@ -166,6 +153,7 @@ int main(void)
             xram0_struct_set(BG_MODE2_CFG, vga_mode2_config_t, y_pos_px, bg_y);
             xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, x_pos_px, fg_x);
             xram0_struct_set(FG_MODE2_CFG, vga_mode2_config_t, y_pos_px, fg_y);
+
             int16_t px = runningman_get_x();
             int16_t py = runningman_get_y();
             xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px, (int16_t)(px - s_cam_x));
@@ -190,29 +178,62 @@ int main(void)
             }
         }
 
-        // ACTIVE SCAN: physics runs here — no XRAM writes.
-        handle_input();
-        runningman_update();
-        enemy_update_all(runningman_get_x(), runningman_get_y(), s_cam_x);
+        // HUD text overlay (state-dependent)
+        if (s_game_state == STATE_TITLE) {
+            hud_draw_title_screen(RIA.vsync);
+        } else if (s_game_state == STATE_PLAYING) {
+            hud_draw_score();
+        } else {
+            hud_draw_end_screen(RIA.vsync, s_was_won);
+        }
 
-        // Compute camera for next frame (used by prefetch + commit above).
+        // ------------------------------------------------------------------
+        // ACTIVE SCAN: input + physics (no XRAM writes).
+        // ------------------------------------------------------------------
+        handle_input();
+
+        bool start_now = is_action_pressed(0, ACTION_PAUSE);
+        bool start_pressed = start_now && !s_start_prev;
+        s_start_prev = start_now;
+
+        if (s_game_state == STATE_TITLE) {
+            if (start_pressed) {
+                hud_clear();
+                s_game_state = STATE_PLAYING;
+            }
+        } else if (s_game_state == STATE_PLAYING) {
+            runningman_update();
+            enemy_update_all(runningman_get_x(), runningman_get_y(), s_cam_x);
+
+            if (!runningman_is_alive() || runningman_is_game_won()) {
+                s_was_won = runningman_is_game_won();
+                hud_clear();
+                s_game_state = STATE_GAMEOVER;
+            }
+        } else { // STATE_GAMEOVER
+            if (start_pressed) {
+                // Reset everything and return to title
+                hud_reset_score();
+                runningman_init();
+                enemy_init();
+                {
+                    int16_t px = runningman_get_x();
+                    int16_t py = runningman_get_y();
+                    s_cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
+                    s_cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
+                    if (s_cam_x < 0) s_cam_x = 0;
+                    if (s_cam_y < 0) s_cam_y = 0;
+                    stream_init(s_cam_x, s_cam_y);
+                }
+                hud_clear();
+                s_game_state = STATE_TITLE;
+            }
+        }
+
+        // Camera tracks player every frame.
         {
             int16_t px = runningman_get_x();
             int16_t py = runningman_get_y();
-
-            // Periodic debug: print when the player is moving, once per ~30 frames.
-            if (++s_dbg_tick >= 30) {
-                s_dbg_tick = 0;
-                if (px != s_prev_px || py != s_prev_py) {
-                    printf("pos(%d,%d) cam(%d,%d) ring_l=%u ring_t=%u\n",
-                           (int)px, (int)py, (int)s_cam_x, (int)s_cam_y,
-                           (unsigned)stream_get_loaded_left(),
-                           (unsigned)stream_get_loaded_top());
-                    s_prev_px = px;
-                    s_prev_py = py;
-                }
-            }
-
             s_cam_x = px - (int16_t)SCREEN_HALF_WIDTH  + 8;
             s_cam_y = py - (int16_t)SCREEN_HALF_HEIGHT + 8;
             if (s_cam_x < 0) s_cam_x = 0;

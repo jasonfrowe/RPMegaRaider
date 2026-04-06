@@ -1,12 +1,12 @@
 #include <rp6502.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include "constants.h"
 #include "input.h"
 #include "runningman.h"
 #include "stream.h"
 #include "enemy.h"
+#include "hud.h"
 
 int16_t player_start_x = 80;
 int16_t player_start_y = 4464;
@@ -203,6 +203,9 @@ void runningman_init(void)
     on_ladder       = false;
     ladder_col      = 0;
     shield_charges  = 3;
+    shard_count     = 0;
+    game_over       = false;
+    game_won        = false;
     immunity_frames = 180;  // 3 seconds of starting immunity
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, y_pos);
@@ -470,15 +473,15 @@ void runningman_update(void)
         uint8_t  t  = read_tile(cx, cy);
         if (t == TILE_CHARGE_PACK) {
             if (shield_charges < MAX_SHIELD_CHARGES) shield_charges++;
-            printf("Shield +1! charges=%u\n", (unsigned)shield_charges);
+            hud_add_score(SCORE_CHARGE_PACK);
             pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
         } else if (t == TILE_MEMORY_SHARD) {
             shard_count++;
-            printf("Shard! %u/%u\n", (unsigned)shard_count, (unsigned)SHARDS_NEEDED);
+            hud_add_score(SCORE_MEMORY_SHARD);
             pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
         } else if (t == TILE_TERMINUS && shard_count >= SHARDS_NEEDED) {
+            hud_add_score(SCORE_TERMINUS);
             game_won = true;
-            puts("YOU ESCAPED! Mission complete.");
         }
     }
 
@@ -490,11 +493,10 @@ void runningman_update(void)
     } else if (enemy_kill_overlapping_player(x_pos, y_pos)) {
         if (shield_charges > 0u) {
             shield_charges--;
+            hud_add_score(-(int32_t)SCORE_SHIELD_HIT_PENALTY);
             immunity_frames = IMMUNITY_FRAMES;
-            printf("Shield hit! charges=%u\n", (unsigned)shield_charges);
         } else {
             game_over = true;
-            puts("GAME OVER - shield depleted");
         }
     }
 }
@@ -502,9 +504,10 @@ void runningman_update(void)
 // ---------------------------------------------------------------------------
 // Gameplay getters
 // ---------------------------------------------------------------------------
-uint8_t runningman_get_shield(void) { return shield_charges; }
-uint8_t runningman_get_shards(void) { return shard_count; }
-bool    runningman_is_alive(void)   { return !game_over; }
+uint8_t runningman_get_shield(void)   { return shield_charges; }
+uint8_t runningman_get_shards(void)   { return shard_count; }
+bool    runningman_is_alive(void)     { return !game_over; }
+bool    runningman_is_game_won(void)  { return game_won; }
 
 // ---------------------------------------------------------------------------
 // Flush pending tile clears to XRAM (call from VBLANK only)

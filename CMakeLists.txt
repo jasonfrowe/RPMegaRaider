@@ -45,4 +45,5 @@ target_sources(RPMegaRaider PRIVATE
     src/runningman.c
     src/stream.c
     src/enemy.c
+    src/hud.c
 )
