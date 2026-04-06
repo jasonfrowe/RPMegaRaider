@@ -515,35 +515,35 @@ def ladder_bot():
 # =============================================================================
 
 def pickup_charge_pack():
-    """Gold lightning bolt on dark substrate — collect to gain an EMP charge."""
+    """Gold lightning bolt on transparent background — collect to gain an EMP charge."""
     G = 15   # warm gold
     C = 10   # bright copper
-    D = 1    # dark basalt substrate
+    T = 0    # transparent
     return make_tile([
-        [D, D, D, D, D, D, D, D],
-        [D, D, G, G, G, D, D, D],
-        [D, G, G, G, D, D, D, D],
-        [G, G, C, D, D, D, D, D],
-        [D, D, C, C, C, D, D, D],
-        [D, D, D, C, C, G, D, D],
-        [D, D, D, D, G, G, G, D],
-        [D, D, D, D, D, D, D, D],
+        [T, T, T, T, T, T, T, T],
+        [T, T, G, G, G, T, T, T],
+        [T, G, G, G, T, T, T, T],
+        [G, G, C, T, T, T, T, T],
+        [T, T, C, C, C, T, T, T],
+        [T, T, T, C, C, G, T, T],
+        [T, T, T, T, G, G, G, T],
+        [T, T, T, T, T, T, T, T],
     ])
 
 def pickup_memory_shard():
     """Bright blue crystal fragment — collect 5 to activate the terminus."""
     B = 13   # crystal blue
     H = 14   # ice blue highlight
-    D = 1    # dark substrate
+    T = 0    # transparent
     return make_tile([
-        [D, D, D, H, D, D, D, D],
-        [D, D, H, B, H, D, D, D],
-        [D, H, B, H, B, H, D, D],
-        [H, B, H, H, H, B, H, D],
-        [D, H, B, H, B, H, D, D],
-        [D, D, H, B, H, D, D, D],
-        [D, D, D, H, D, D, D, D],
-        [D, D, D, D, D, D, D, D],
+        [T, T, T, H, T, T, T, T],
+        [T, T, H, B, H, T, T, T],
+        [T, H, B, H, B, H, T, T],
+        [H, B, H, H, H, B, H, T],
+        [T, H, B, H, B, H, T, T],
+        [T, T, H, B, H, T, T, T],
+        [T, T, T, H, T, T, T, T],
+        [T, T, T, T, T, T, T, T],
     ])
 
 def pickup_terminus():
@@ -551,16 +551,16 @@ def pickup_terminus():
     Y = 15   # warm gold outer ring
     R = 12   # lava red inner ring
     W = 5    # bright highlight core
-    D = 1    # dark substrate
+    T = 0    # transparent
     return make_tile([
-        [D, Y, Y, Y, Y, Y, Y, D],
-        [Y, R, R, R, R, R, Y, D],
-        [Y, R, W, W, W, R, Y, D],
-        [Y, R, W, D, W, R, Y, D],
-        [Y, R, W, W, W, R, Y, D],
-        [Y, R, R, R, R, R, Y, D],
-        [D, Y, Y, Y, Y, Y, Y, D],
-        [D, D, D, D, D, D, D, D],
+        [T, Y, Y, Y, Y, Y, Y, T],
+        [Y, R, R, R, R, R, Y, T],
+        [Y, R, W, W, W, R, Y, T],
+        [Y, R, W, T, W, R, Y, T],
+        [Y, R, W, W, W, R, Y, T],
+        [Y, R, R, R, R, R, Y, T],
+        [T, Y, Y, Y, Y, Y, Y, T],
+        [T, T, T, T, T, T, T, T],
     ])
 
 # =============================================================================

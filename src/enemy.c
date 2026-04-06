@@ -23,25 +23,12 @@ static unsigned frame_ptr(EnemyType type, uint8_t anim_frame)
 {
     uint8_t base;
     switch (type) {
-        case CRAWLER: base = (uint8_t)(0u + (anim_frame & 1u)); break;
-        case FLYER:   base = (uint8_t)(2u + (anim_frame & 1u)); break;
-        case TURRET:  base = (uint8_t)(4u + (anim_frame & 1u)); break;
+        case RUSHER:  base = (uint8_t)(0u + (anim_frame & 1u)); break;
+        case TRACKER: base = (uint8_t)(2u + (anim_frame & 1u)); break;
+        case GHOST:   base = (uint8_t)(4u + (anim_frame & 1u)); break;
         default:      base = 0u; break;
     }
     return ENEMY_SPRITE_BASE + (unsigned)base * ENEMY_FRAME_BYTES;
-}
-
-// ---------------------------------------------------------------------------
-// Simple 16-element sine approximation for flyer bob.
-// Maps phase_idx (0-31) to ±3 pixel vertical displacement.
-// ---------------------------------------------------------------------------
-static const int8_t s_sin16[16] = {
-    0, 1, 2, 3, 3, 3, 2, 1, 0, -1, -2, -3, -3, -3, -2, -1
-};
-
-static int8_t bob_y(uint8_t phase)
-{
-    return s_sin16[phase & 15u];
 }
 
 // ---------------------------------------------------------------------------
@@ -51,125 +38,220 @@ static enemy_t s_enemies[MAX_ENEMIES];
 static uint8_t s_num_enemies = 0;
 
 // ---------------------------------------------------------------------------
-// AI helpers — tile queries via ring buffer
+// Breadcrumb trail — Type 2 (TRACKER)
+// Player position is sampled every CRUMB_INTERVAL frames into a circular
+// buffer.  TRACKERs follow the trail from the oldest crumb to the newest.
 // ---------------------------------------------------------------------------
+#define CRUMB_COUNT    16u
+#define CRUMB_INTERVAL 25u
 
-// Returns true when world tile (col, row) is a solid platform/wall tile
-// AND the tile is currently within the ring buffer's loaded window.
-static bool solid_at(uint16_t col, uint16_t row)
+static int16_t s_crumb_x[CRUMB_COUNT];
+static int16_t s_crumb_y[CRUMB_COUNT];
+static uint8_t s_crumb_head = 0;    // next write slot
+static uint8_t s_crumb_fill = 0;    // valid crumbs in buffer (0..CRUMB_COUNT)
+static uint8_t s_crumb_tick = 0;
+
+// Last known horizontal direction of the player — GHOST uses this for intercept.
+static int8_t  s_player_dir    =  1;
+static int16_t s_player_prev_x =  0;
+
+static void record_crumb(int16_t px, int16_t py)
 {
-    uint16_t left = stream_get_loaded_left();
-    uint16_t top  = stream_get_loaded_top();
-    if (col < left || col >= left + RING_W) return false;
-    if (row < top  || row >= top  + RING_H) return false;
-    uint8_t t = stream_read_fg_tile(col, row);
-    return (t >= 1u && t <= 30u);
+    if      (px > s_player_prev_x) s_player_dir =  1;
+    else if (px < s_player_prev_x) s_player_dir = -1;
+    s_player_prev_x = px;
+
+    if (++s_crumb_tick < CRUMB_INTERVAL) return;
+    s_crumb_tick = 0;
+    s_crumb_x[s_crumb_head] = px;
+    s_crumb_y[s_crumb_head] = py;
+    s_crumb_head = (uint8_t)((s_crumb_head + 1u) & (CRUMB_COUNT - 1u));
+    if (s_crumb_fill < CRUMB_COUNT) s_crumb_fill++;
+}
+
+// Respawn an enemy just off-screen near the player.
+// Left/right side alternates by sprite_idx so enemies spread out.
+static void respawn_offscreen(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
+{
+    uint8_t  side    = (uint8_t)(e->sprite_idx & 1u);
+    int16_t  spawn_x = side
+        ? (int16_t)(cam_x + (int16_t)(SCREEN_WIDTH  + 24))
+        : (int16_t)(cam_x - 24);
+
+    if (spawn_x < 16) spawn_x = 16;
+    if (spawn_x > (int16_t)(WORLD_W_PX - 16)) spawn_x = (int16_t)(WORLD_W_PX - 16);
+
+    e->x = spawn_x;
+    e->y = py;           // always at the player's current height
+    e->spawn_x     = e->x;
+    e->spawn_y     = e->y;
+    e->state       = PATROL;
+    e->vx          = side ? (int8_t)-3 : (int8_t)3;  // heading toward player
+    e->anim_frame  = 0u;
+    e->anim_tick   = 0u;
+    e->state_timer = 0u;
+
+    // Re-initialise TRACKER crumb index to the oldest crumb so it re-traces the trail.
+    if (e->type == TRACKER) {
+        uint8_t tail = (uint8_t)((s_crumb_head + CRUMB_COUNT - s_crumb_fill) & (CRUMB_COUNT - 1u));
+        e->crumb_idx = tail;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Per-type update functions
 // ---------------------------------------------------------------------------
 
-static void update_crawler(enemy_t *e, int16_t px, int16_t py)
+// ---------------------------------------------------------------------------
+// Type 1 — RUSHER
+// Fast horizontal sweeper (speed 3 — faster than the player).
+// Only reverses in the outer 1/3 of the visible screen so the player can
+// predict it and jump over it.  Exits the screen edge → DEAD with a short
+// delay, then reappears on the opposite side at the player's height.
+// ---------------------------------------------------------------------------
+static void update_rusher(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
 {
-    // Determine chase vs patrol
-    int16_t dx = (int16_t)(px - e->x);
-    int16_t dy = (int16_t)(py - e->y);
-    int16_t adx = dx < 0 ? (int16_t)-dx : dx;
-    int16_t ady = dy < 0 ? (int16_t)-dy : dy;
-    bool chase = (adx < 160 && ady < 48);
+    (void)px; (void)py;
+    int16_t screen_x = (int16_t)(e->x - cam_x);
 
-    if (e->vx == 0) e->vx = 1;  // safe default direction
-    int8_t speed = chase ? 2 : 1;
-
-    // In chase mode, orient towards player
-    if (chase) {
-        if (dx > 0 && e->vx < 0) e->vx = 1;
-        else if (dx < 0 && e->vx > 0) e->vx = -1;
+    // Walked off-screen → enter DEAD with a short respawn delay.
+    if (screen_x < -16 || screen_x > (int16_t)(SCREEN_WIDTH + 16)) {
+        e->state       = DEAD;
+        e->state_timer = 120u;   // ~2 s before reappearing
+        return;
     }
 
-    // Tile-based obstacle checks (only when ring buffer covers this area)
-    uint16_t ex_pix   = (uint16_t)(e->x);
-    uint16_t ey_pix   = (uint16_t)(e->y);
-    uint16_t feet_col = (uint16_t)(ex_pix / 8u);
-    uint16_t feet_row = (uint16_t)((ey_pix + 16u) / 8u);  // row just below feet
+    // Ensure a non-zero speed.
+    if (e->vx == 0) e->vx = (int8_t)3;
 
-    // Lookahead column in direction of movement
-    uint16_t ahead_x  = (e->vx > 0)
-        ? (uint16_t)(ex_pix + 16u)   // right edge
-        : (uint16_t)(ex_pix - 1u);   // left edge (wraps harmlessly if 0)
-    uint16_t ahead_col = ahead_x / 8u;
+    // Reverse only in the outer 1/3 of the visible screen.
+    int16_t third = (int16_t)(SCREEN_WIDTH / 3);
+    if (screen_x <  third      && e->vx < 0) e->vx =  (int8_t)3;
+    if (screen_x > (third * 2) && e->vx > 0) e->vx = (int8_t)-3;
 
-    // Reverse on wall or platform edge
-    bool wall  = solid_at(ahead_col, (uint16_t)(ey_pix / 8u)) ||
-                 solid_at(ahead_col, (uint16_t)((ey_pix + 14u) / 8u));
-    bool edge  = !solid_at(ahead_col, feet_row);  // no floor ahead
-    if (wall || edge) {
-        e->vx = -e->vx;
-    }
+    e->x = (int16_t)(e->x + e->vx);
 
-    e->x += (int16_t)(e->vx * speed);
+    // Hard world-edge guard.
+    if (e->x < 16)                          { e->x = 16;                             e->vx =  (int8_t)3; }
+    if (e->x > (int16_t)(WORLD_W_PX - 16)) { e->x = (int16_t)(WORLD_W_PX - 16);     e->vx = (int8_t)-3; }
 
-    // World horizontal clamp
-    if (e->x < 16) { e->x = 16; e->vx = 1; }
-    if (e->x > (int16_t)(WORLD_W_PX - 16)) { e->x = (int16_t)(WORLD_W_PX - 16); e->vx = -1; }
-
-    // Animation: toggle frame every 8 ticks in patrol, 4 in chase
-    uint8_t anim_rate = chase ? 4u : 8u;
-    if (++e->anim_tick >= anim_rate) {
-        e->anim_tick = 0;
-        e->anim_frame ^= 1u;
-    }
+    e->state = CHASE;
+    if (++e->anim_tick >= 4u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
 }
 
-static void update_flyer(enemy_t *e, int16_t px, int16_t py)
+// ---------------------------------------------------------------------------
+// Type 2 — TRACKER
+// Follows the player's breadcrumb trail at speed 1 (slower than the player).
+// Retraces the player's actual path including vertical movement.
+// Large gaps in the trail (jumps / fast scroll) are skipped.
+// ---------------------------------------------------------------------------
+static void update_tracker(enemy_t *e, int16_t px, int16_t py)
 {
-    int16_t dx = (int16_t)(px - e->x);
-    int16_t dy = (int16_t)(py - e->y);
-    int16_t adx = dx < 0 ? (int16_t)-dx : dx;
-    int16_t ady = dy < 0 ? (int16_t)-dy : dy;
-    bool chase = (adx < 200 && ady < 150);
-
-    // Horizontal drift toward player in chase, idle patrol stays put
-    if (chase) {
-        if (dx > 2)       e->x += 1;
-        else if (dx < -2) e->x -= 1;
+    // No crumbs recorded yet — drift very slowly toward the player.
+    if (s_crumb_fill == 0) {
+        int16_t dx = (int16_t)(px - e->x);
+        int16_t dy = (int16_t)(py - e->y);
+        if (dx >  8) e->x++;
+        else if (dx < -8) e->x--;
+        if (dy >  8) e->y++;
+        else if (dy < -8) e->y--;
+        e->state = PATROL;
+        if (++e->anim_tick >= 12u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
+        return;
     }
 
-    // Sinusoidal Y bob around spawn_y (slower in patrol, matches player in chase)
-    e->y = (int16_t)(e->spawn_y + (int16_t)(bob_y(e->sin_idx) * 3));
-    if (chase && ady > 20) {
-        if (dy > 0) e->y += 1;
-        else        e->y -= 1;
+    // Move toward the current target crumb.
+    int16_t tx  = s_crumb_x[e->crumb_idx];
+    int16_t ty  = s_crumb_y[e->crumb_idx];
+    int16_t dx  = (int16_t)(tx - e->x);
+    int16_t dy  = (int16_t)(ty - e->y);
+    int16_t adx = (dx < 0) ? (int16_t)-dx : dx;
+    int16_t ady = (dy < 0) ? (int16_t)-dy : dy;
+
+    if (adx > 6) e->x = (int16_t)(e->x + (dx > 0 ? 1 : -1));
+    if (ady > 6) e->y = (int16_t)(e->y + (dy > 0 ? 1 : -1));
+
+    // Reached this crumb — advance toward the most recent one.
+    if (adx < 16 && ady < 16) {
+        uint8_t next = (uint8_t)((e->crumb_idx + 1u) & (CRUMB_COUNT - 1u));
+        if (next != s_crumb_head) {
+            // Large gap between consecutive crumbs = player jumped; skip past it.
+            int16_t gx = (int16_t)(s_crumb_x[next] - s_crumb_x[e->crumb_idx]);
+            int16_t gy = (int16_t)(s_crumb_y[next] - s_crumb_y[e->crumb_idx]);
+            if (gx < 0) gx = (int16_t)-gx;
+            if (gy < 0) gy = (int16_t)-gy;
+            e->crumb_idx = next;
+            if (gx > 80 || gy > 80) {
+                uint8_t skip = (uint8_t)((next + 1u) & (CRUMB_COUNT - 1u));
+                if (skip != s_crumb_head) e->crumb_idx = skip;
+            }
+        }
     }
 
-    e->sin_idx = (uint8_t)((e->sin_idx + 1u) & 31u);
-
-    // Animate: alternate bob frames
-    if (++e->anim_tick >= 10u) {
-        e->anim_tick = 0;
-        e->anim_frame ^= 1u;
-    }
-
-    // World clamp
+    // World bounds.
     if (e->x < 16) e->x = 16;
     if (e->x > (int16_t)(WORLD_W_PX - 16)) e->x = (int16_t)(WORLD_W_PX - 16);
+    if (e->y < 8)  e->y = 8;
+    if (e->y > (int16_t)(WORLD_H_PX - 16)) e->y = (int16_t)(WORLD_H_PX - 16);
+
+    e->state = CHASE;
+    if (++e->anim_tick >= 10u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
 }
 
-static void update_turret(enemy_t *e, int16_t px, int16_t py)
+// ---------------------------------------------------------------------------
+// Type 3 — GHOST (Ms. Pac-Man intercept targeting)
+// Normally aims 48 px ahead of the player in their last-known direction.
+// When the player is near a pickup or goal tile, the ghost speeds up and
+// switches to direct pursuit.  Floats freely in 2-D.
+// ---------------------------------------------------------------------------
+static void update_ghost(enemy_t *e, int16_t px, int16_t py)
 {
-    // Stationary — only switch between armed/idle animation
-    int16_t dx = (int16_t)(px - e->x);
-    int16_t dy = (int16_t)(py - e->y);
-    int16_t adx = dx < 0 ? (int16_t)-dx : dx;
-    int16_t ady = dy < 0 ? (int16_t)-dy : dy;
-    bool near = (adx < 120 && ady < 80);
-
-    uint8_t rate = near ? 4u : 15u;
-    if (++e->anim_tick >= rate) {
-        e->anim_tick = 0;
-        e->anim_frame ^= 1u;  // frame 4 ↔ 5 (idle ↔ armed)
+    // Scan a 5×5-tile window around the player for pickup / goal tiles.
+    bool triggered = false;
+    {
+        int16_t pdx = (int16_t)(px - e->x); if (pdx < 0) pdx = (int16_t)-pdx;
+        int16_t pdy = (int16_t)(py - e->y); if (pdy < 0) pdy = (int16_t)-pdy;
+        if (pdx < 200 && pdy < 200) {
+            uint16_t ring_left = stream_get_loaded_left();
+            uint16_t ring_top  = stream_get_loaded_top();
+            uint16_t pcx = (uint16_t)((uint16_t)(px + 8) / TILE_W);
+            uint16_t pcy = (uint16_t)((uint16_t)(py + 8) / TILE_H);
+            uint16_t r, c;
+            for (r = (pcy > 2u ? pcy - 2u : 0u); r <= pcy + 2u && !triggered; r++) {
+                if (r < ring_top || r >= ring_top + RING_H) continue;
+                for (c = (pcx > 2u ? pcx - 2u : 0u); c <= pcx + 2u && !triggered; c++) {
+                    if (c < ring_left || c >= ring_left + RING_W) continue;
+                    uint8_t t = stream_read_fg_tile(c, r);
+                    if (t == TILE_CHARGE_PACK || t == TILE_MEMORY_SHARD || t == TILE_TERMINUS)
+                        triggered = true;
+                }
+            }
+        }
     }
+
+    // Target: intercept ahead of player (normal) or direct pursuit (triggered).
+    int16_t tx = triggered
+        ? px
+        : (int16_t)(px + (int16_t)(s_player_dir * 48));
+    int16_t ty = py;
+
+    int16_t dx  = (int16_t)(tx - e->x);
+    int16_t dy  = (int16_t)(ty - e->y);
+    int16_t adx = (dx < 0) ? (int16_t)-dx : dx;
+    int16_t ady = (dy < 0) ? (int16_t)-dy : dy;
+
+    int8_t speed = triggered ? (int8_t)2 : (int8_t)1;
+    if (adx > 4) e->x = (int16_t)(e->x + (dx > 0 ? speed : (int8_t)-speed));
+    if (ady > 4) e->y = (int16_t)(e->y + (dy > 0 ? speed : (int8_t)-speed));
+
+    // World bounds.
+    if (e->x < 16) e->x = 16;
+    if (e->x > (int16_t)(WORLD_W_PX - 16)) e->x = (int16_t)(WORLD_W_PX - 16);
+    if (e->y < 8)  e->y = 8;
+    if (e->y > (int16_t)(WORLD_H_PX - 16)) e->y = (int16_t)(WORLD_H_PX - 16);
+
+    e->state = triggered ? CHASE : PATROL;
+    if (++e->anim_tick >= 10u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,12 +286,13 @@ void enemy_init(void)
         e->spawn_y   = (int16_t)y_px;
         e->type      = (EnemyType)(typ <= 2u ? typ : 0u);
         e->state     = PATROL;
-        e->vx        = (e->type == CRAWLER) ? ((i & 1u) ? (int8_t)1 : (int8_t)-1) : (int8_t)0;
-        e->sin_idx   = (uint8_t)(i * 5u);  // stagger flyer phases
+        e->vx        = (e->type == RUSHER) ? ((i & 1u) ? (int8_t)3 : (int8_t)-3) : (int8_t)0;
         e->anim_frame = 0;
         e->anim_tick  = (uint8_t)(i * 7u); // stagger animation timings
         e->sprite_idx = (uint8_t)(i + 1u); // slots 1-7; slot 0 = player
         e->state_timer = 0;
+        e->crumb_idx = 0;
+        e->activated = 0;
     }
     close(fd);
     s_num_enemies = count;
@@ -217,32 +300,37 @@ void enemy_init(void)
     printf("enemy: %u enemies loaded\n", (unsigned)s_num_enemies);
 }
 
-void enemy_update_all(int16_t player_x, int16_t player_y)
+void enemy_update_all(int16_t player_x, int16_t player_y, int16_t cam_x)
 {
+    record_crumb(player_x, player_y);
+
     uint8_t i;
     for (i = 0; i < s_num_enemies; i++) {
         enemy_t *e = &s_enemies[i];
 
+        // Dead: count down, then respawn just off-screen.
         if (e->state == DEAD) {
-            if (e->state_timer > 0u) {
-                e->state_timer--;
-            } else {
-                // Respawn at original position
-                e->x         = e->spawn_x;
-                e->y         = e->spawn_y;
-                e->state     = PATROL;
-                e->vx        = (e->type == CRAWLER) ? (int8_t)1 : (int8_t)0;
-                e->anim_frame = 0u;
-                e->anim_tick  = 0u;
-            }
+            if (e->state_timer > 0u) e->state_timer--;
+            else                     respawn_offscreen(e, player_x, player_y, cam_x);
             continue;
         }
 
-        // Update AI by type
+        // Any live enemy too far from the player gets repositioned off-screen.
+        // This also fires on the very first frame for enemies spawned far away,
+        // so all enemies appear near the player from the start.
+        {
+            int16_t dx = (int16_t)(e->x - player_x); if (dx < 0) dx = (int16_t)-dx;
+            int16_t dy = (int16_t)(e->y - player_y); if (dy < 0) dy = (int16_t)-dy;
+            if (dx > 460 || dy > 360) {
+                respawn_offscreen(e, player_x, player_y, cam_x);
+                continue;
+            }
+        }
+
         switch (e->type) {
-            case CRAWLER: update_crawler(e, player_x, player_y); break;
-            case FLYER:   update_flyer  (e, player_x, player_y); break;
-            case TURRET:  update_turret (e, player_x, player_y); break;
+            case RUSHER:  update_rusher (e, player_x, player_y, cam_x); break;
+            case TRACKER: update_tracker(e, player_x, player_y);        break;
+            case GHOST:   update_ghost  (e, player_x, player_y);        break;
         }
     }
 }
@@ -271,21 +359,22 @@ void enemy_draw_all(int16_t cam_x, int16_t cam_y)
 
 void enemy_kill_in_radius(int16_t cx, int16_t cy, uint8_t radius)
 {
-    uint16_t r2 = (uint16_t)radius * (uint16_t)radius;
+    // Use uint32_t for r2 — radius=180 gives r2=32400 which overflows uint16_t.
+    uint32_t r2 = (uint32_t)radius * (uint32_t)radius;
     uint8_t i;
     for (i = 0; i < s_num_enemies; i++) {
         enemy_t *e = &s_enemies[i];
         if (e->state == DEAD) continue;
 
-        // Quick bounding-box reject before the squared distance check
+        // Quick bounding-box reject
         int16_t dx = (int16_t)((e->x + 8) - cx);
         int16_t dy = (int16_t)((e->y + 8) - cy);
         if (dx > (int16_t)radius || dx < -(int16_t)radius) continue;
         if (dy > (int16_t)radius || dy < -(int16_t)radius) continue;
 
-        uint16_t d2 = (uint16_t)(dx * dx) + (uint16_t)(dy * dy);
+        uint32_t d2 = (uint32_t)((int32_t)dx * dx) + (uint32_t)((int32_t)dy * dy);
         if (d2 <= r2) {
-            e->state      = DEAD;
+            e->state       = DEAD;
             e->state_timer = ENEMY_RESPAWN_FRAMES;
             printf("enemy %u killed by EMP\n", (unsigned)i);
         }
@@ -305,6 +394,27 @@ bool enemy_overlaps_player(int16_t px, int16_t py)
         if (dx < 0) dx = (int16_t)-dx;
         if (dy < 0) dy = (int16_t)-dy;
         if (dx < 10 && dy < 10) return true;
+    }
+    return false;
+}
+
+bool enemy_kill_overlapping_player(int16_t px, int16_t py)
+{
+    uint8_t i;
+    for (i = 0; i < s_num_enemies; i++) {
+        enemy_t *e = &s_enemies[i];
+        if (e->state == DEAD) continue;
+
+        int16_t dx = (int16_t)((e->x + 8) - (px + 8));
+        int16_t dy = (int16_t)((e->y + 8) - (py + 8));
+        if (dx < 0) dx = (int16_t)-dx;
+        if (dy < 0) dy = (int16_t)-dy;
+        if (dx < 12 && dy < 12) {
+            e->state       = DEAD;
+            e->state_timer = ENEMY_RESPAWN_FRAMES;
+            printf("enemy %u killed by shield contact\n", (unsigned)i);
+            return true;
+        }
     }
     return false;
 }

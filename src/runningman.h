@@ -12,9 +12,8 @@ void    runningman_init(void);
 void    runningman_update(void);
 int16_t runningman_get_x(void);
 int16_t runningman_get_y(void);
-uint8_t runningman_get_charge(void);
+uint8_t runningman_get_shield(void);
 uint8_t runningman_get_shards(void);
-uint8_t runningman_get_lives(void);
 bool    runningman_is_alive(void);
 void    runningman_flush_tile_writes(void);
 

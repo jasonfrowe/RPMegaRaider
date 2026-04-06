@@ -68,7 +68,7 @@ static void init_graphics(void)
     // Slots 1-7: enemies — hidden off-screen initially, positions set by enemy_init
     {
         uint8_t i;
-        for (i = 1; i < SPRITE_COUNT; i++) {
+        for (i = 1; i < SHIELD_SLOT; i++) {
             unsigned cfg = ENEMY_CFG(i);
             xram0_struct_set(cfg, vga_mode4_sprite_t, x_pos_px,             -32);
             xram0_struct_set(cfg, vga_mode4_sprite_t, y_pos_px,             -32);
@@ -76,6 +76,16 @@ static void init_graphics(void)
             xram0_struct_set(cfg, vga_mode4_sprite_t, log_size,             4); // 16×16
             xram0_struct_set(cfg, vga_mode4_sprite_t, has_opacity_metadata, false);
         }
+    }
+
+    // Slot 8: shield overlay — 32×32 ring sprite, hidden until shield is drawn
+    {
+        unsigned cfg = ENEMY_CFG(SHIELD_SLOT);
+        xram0_struct_set(cfg, vga_mode4_sprite_t, x_pos_px,             -64);
+        xram0_struct_set(cfg, vga_mode4_sprite_t, y_pos_px,             -64);
+        xram0_struct_set(cfg, vga_mode4_sprite_t, xram_sprite_ptr,      SHIELD_SPRITE_BASE);
+        xram0_struct_set(cfg, vga_mode4_sprite_t, log_size,             5); // 32×32
+        xram0_struct_set(cfg, vga_mode4_sprite_t, has_opacity_metadata, false);
     }
 
     // Register all SPRITE_COUNT sprites with one xreg_vga_mode call.
@@ -160,12 +170,30 @@ int main(void)
             int16_t py = runningman_get_y();
             xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, x_pos_px, (int16_t)(px - s_cam_x));
             xram0_struct_set(SPRITE_CFG, vga_mode4_sprite_t, y_pos_px, (int16_t)(py - s_cam_y));
+
+            // Slot 8: shield ring — 32×32, centred -8px around the 16×16 player
+            {
+                uint8_t sc = runningman_get_shield();
+                unsigned shield_cfg = ENEMY_CFG(SHIELD_SLOT);
+                if (sc > 0u) {
+                    unsigned fidx = (sc >= 3u) ? 0u : (sc == 2u) ? 1u : 2u;
+                    xram0_struct_set(shield_cfg, vga_mode4_sprite_t, x_pos_px,
+                                     (int16_t)((px - s_cam_x) - 8));
+                    xram0_struct_set(shield_cfg, vga_mode4_sprite_t, y_pos_px,
+                                     (int16_t)((py - s_cam_y) - 8));
+                    xram0_struct_set(shield_cfg, vga_mode4_sprite_t, xram_sprite_ptr,
+                                     (uint16_t)(SHIELD_SPRITE_BASE + fidx * SHIELD_FRAME_SIZE));
+                } else {
+                    xram0_struct_set(shield_cfg, vga_mode4_sprite_t, x_pos_px, -64);
+                    xram0_struct_set(shield_cfg, vga_mode4_sprite_t, y_pos_px, -64);
+                }
+            }
         }
 
         // ACTIVE SCAN: physics runs here — no XRAM writes.
         handle_input();
         runningman_update();
-        enemy_update_all(runningman_get_x(), runningman_get_y());
+        enemy_update_all(runningman_get_x(), runningman_get_y(), s_cam_x);
 
         // Compute camera for next frame (used by prefetch + commit above).
         {

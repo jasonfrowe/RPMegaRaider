@@ -71,12 +71,9 @@ static uint16_t ladder_col;
 // ---------------------------------------------------------------------------
 // Gameplay state
 // ---------------------------------------------------------------------------
-static uint8_t  charge_count    = 0;
+static uint8_t  shield_charges  = 3;
 static uint8_t  shard_count     = 0;
-static uint8_t  lives           = LIVES_START;
 static uint8_t  immunity_frames = 0;
-static uint8_t  emp_cooldown    = 0;
-static bool     emp_btn_prev    = false;
 static bool     game_over       = false;
 static bool     game_won        = false;
 static bool     pickup_pending  = false;
@@ -203,8 +200,10 @@ void runningman_init(void)
     jump_btn_prev = false;
     last_dir      = 0;
     decel_tick    = 0;
-    on_ladder     = false;
-    ladder_col    = 0;
+    on_ladder       = false;
+    ladder_col      = 0;
+    shield_charges  = 3;
+    immunity_frames = 180;  // 3 seconds of starting immunity
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, y_pos);
     set_frame(FRAME_IDLE_START);
@@ -463,30 +462,15 @@ void runningman_update(void)
     }
 
     // -----------------------------------------------------------------------
-    // EMP burst (B button / ACTION_SUPER_FIRE)
-    // -----------------------------------------------------------------------
-    {
-        bool emp_btn = is_action_pressed(0, ACTION_SUPER_FIRE);
-        if (emp_btn && !emp_btn_prev && charge_count > 0u && emp_cooldown == 0u) {
-            charge_count--;
-            emp_cooldown = EMP_COOLDOWN_FRAMES;
-            enemy_kill_in_radius((int16_t)(x_pos + 8), (int16_t)(y_pos + 8), EMP_RADIUS_PX);
-            printf("EMP! charges=%u\n", (unsigned)charge_count);
-        }
-        emp_btn_prev = emp_btn;
-        if (emp_cooldown > 0u) --emp_cooldown;
-    }
-
-    // -----------------------------------------------------------------------
-    // Pickup detection (tile under player center)
+    // Pickup detection (tile under player centre)
     // -----------------------------------------------------------------------
     {
         uint16_t cx = (uint16_t)((x_pos + 8) / TILE_W);
         uint16_t cy = (uint16_t)((y_pos + 8) / TILE_H);
         uint8_t  t  = read_tile(cx, cy);
         if (t == TILE_CHARGE_PACK) {
-            if (charge_count < 9u) charge_count++;
-            printf("Charge! count=%u\n", (unsigned)charge_count);
+            if (shield_charges < MAX_SHIELD_CHARGES) shield_charges++;
+            printf("Shield +1! charges=%u\n", (unsigned)shield_charges);
             pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
         } else if (t == TILE_MEMORY_SHARD) {
             shard_count++;
@@ -499,24 +483,27 @@ void runningman_update(void)
     }
 
     // -----------------------------------------------------------------------
-    // Enemy collision (only when not immune)
+    // Enemy collision: shield absorbs hit, enemy dies
     // -----------------------------------------------------------------------
     if (immunity_frames > 0u) {
         --immunity_frames;
-    } else if (enemy_overlaps_player(x_pos, y_pos)) {
-        if (lives > 0u) --lives;
-        immunity_frames = IMMUNITY_FRAMES;
-        printf("HIT! lives=%u\n", (unsigned)lives);
-        if (lives == 0u) { game_over = true; puts("GAME OVER"); }
+    } else if (enemy_kill_overlapping_player(x_pos, y_pos)) {
+        if (shield_charges > 0u) {
+            shield_charges--;
+            immunity_frames = IMMUNITY_FRAMES;
+            printf("Shield hit! charges=%u\n", (unsigned)shield_charges);
+        } else {
+            game_over = true;
+            puts("GAME OVER - shield depleted");
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
 // Gameplay getters
 // ---------------------------------------------------------------------------
-uint8_t runningman_get_charge(void) { return charge_count; }
+uint8_t runningman_get_shield(void) { return shield_charges; }
 uint8_t runningman_get_shards(void) { return shard_count; }
-uint8_t runningman_get_lives(void)  { return lives; }
 bool    runningman_is_alive(void)   { return !game_over; }
 
 // ---------------------------------------------------------------------------
