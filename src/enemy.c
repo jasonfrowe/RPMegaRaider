@@ -37,9 +37,6 @@ static unsigned frame_ptr(EnemyType type, uint8_t anim_frame)
 static enemy_t s_enemies[MAX_ENEMIES];
 static uint8_t s_num_enemies = 0;
 
-extern int16_t player_start_y;
-static bool s_grace_period = true;
-
 // ---------------------------------------------------------------------------
 // Breadcrumb trail — Type 2 (TRACKER)
 // Player position is sampled every CRUMB_INTERVAL frames into a circular
@@ -76,19 +73,27 @@ static void record_crumb(int16_t px, int16_t py)
 // Left/right side alternates by sprite_idx so enemies spread out.
 static void respawn_offscreen(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
 {
-    uint8_t  side    = (uint8_t)(e->sprite_idx & 1u);
+    // Spawn ahead of the player's movement direction so they are forced into an encounter
+    uint8_t side;
+    if (s_player_dir > 0)      side = 1; // Player moving right, spawn right
+    else if (s_player_dir < 0) side = 0; // Player moving left, spawn left
+    else                       side = (uint8_t)(e->sprite_idx & 1u);
+
+    // Stagger multiple enemies spawning at the same time so they don't perfectly overlap
+    int16_t offset = (int16_t)((e->sprite_idx & 3u) * 32);
+
     int16_t  spawn_x = side
-        ? (int16_t)(cam_x + (int16_t)(SCREEN_WIDTH  + 24))
-        : (int16_t)(cam_x - 24);
+        ? (int16_t)(cam_x + (int16_t)(SCREEN_WIDTH  + 24 + offset))
+        : (int16_t)(cam_x - 24 - offset);
 
     if (spawn_x < 16) spawn_x = 16;
     if (spawn_x > (int16_t)(WORLD_W_PX - 16)) spawn_x = (int16_t)(WORLD_W_PX - 16);
 
     e->x = spawn_x;
 
-    // GHOST (Turret) should stay on its original spawn floor.
     if (e->type == GHOST) {
-        e->y = e->spawn_y;
+        // Snap to the nearest 8-pixel floor grid based on the player's height.
+        e->y = (int16_t)(py & ~7);
     } else {
         e->y = py;       // always at the player's current height
     }
@@ -123,8 +128,9 @@ static void update_rusher(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
     int16_t screen_x = (int16_t)(e->x - cam_x);
 
     // Walked off-screen → enter DEAD with a short respawn delay.
-    // Check if fully off screen, using a wider margin so fresh spawns don't instantly die.
-    if (screen_x < -32 || screen_x > (int16_t)(SCREEN_WIDTH + 32)) {
+    // Check if fully off screen, using a wide margin (150px) to comfortably fit the 
+    // stagger offset from fresh off-screen spawns so they don't instantly die.
+    if (screen_x < -150 || screen_x > (int16_t)(SCREEN_WIDTH + 150)) {
         e->state       = DEAD;
         e->state_timer = 120u;   // ~2 s before reappearing
         return;
@@ -255,7 +261,7 @@ static void update_ghost(enemy_t *e, int16_t px, int16_t py)
     if (e->x > (int16_t)(WORLD_W_PX - 16)) e->x = (int16_t)(WORLD_W_PX - 16);
 
     e->state = triggered ? CHASE : PATROL;
-    if (++e->anim_tick >= 10u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
+    e->anim_frame = triggered ? 1u : 0u; // 0 = idle (red), 1 = armed (yellow spark)
 }
 
 // ---------------------------------------------------------------------------
@@ -308,18 +314,17 @@ void enemy_update_all(int16_t player_x, int16_t player_y, int16_t cam_x)
 {
     record_crumb(player_x, player_y);
 
-    if (s_grace_period) {
-        // Only start spawning enemies once the player climbs up a level (80 pixels up)
-        if (player_y < player_start_y - 80) {
-            s_grace_period = false;
-        } else {
-            return;
-        }
-    }
-
     uint8_t i;
     for (i = 0; i < s_num_enemies; i++) {
         enemy_t *e = &s_enemies[i];
+
+        if (!e->activated) {
+            if (e->type == RUSHER  && player_y <= 4336) e->activated = 1;
+            if (e->type == TRACKER && player_y <= 4264) e->activated = 1;
+            if (e->type == GHOST   && player_y <= 4152) e->activated = 1;
+            
+            if (!e->activated) continue;
+        }
 
         // Dead: count down, then respawn just off-screen.
         if (e->state == DEAD) {
@@ -334,6 +339,7 @@ void enemy_update_all(int16_t player_x, int16_t player_y, int16_t cam_x)
         {
             int16_t dx = (int16_t)(e->x - player_x); if (dx < 0) dx = (int16_t)-dx;
             int16_t dy = (int16_t)(e->y - player_y); if (dy < 0) dy = (int16_t)-dy;
+            
             if (dx > 460 || dy > 360) {
                 respawn_offscreen(e, player_x, player_y, cam_x);
                 continue;
