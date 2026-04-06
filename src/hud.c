@@ -135,7 +135,7 @@ void hud_draw_title_screen(uint8_t vsync)
     hud_draw_text(10,  10, "ESCAPE THE DATA VAULT", 7);
 
     // Controls hint — grey
-    hud_draw_text(8,  22, "EXPLORE  COLLECT  ESCAPE!", 8);
+    hud_draw_text(8,  22, "COLLECT SHARDS REACH EXIT", 8);
     hud_draw_text(8,  23, "SHIELD ABSORBS ENEMY HITS", 8);
 
     // Flashing PRESS START — bright white when on
@@ -152,13 +152,13 @@ void hud_draw_title_screen(uint8_t vsync)
 void hud_draw_end_screen(uint8_t vsync, bool won)
 {
     if (won) {
-        hud_draw_text(11, 12, "Y O U   W I N !", 10); // bright green
+        hud_draw_text(9, 12, "Y O U   W I N !", 10); // bright green
     } else {
-        hud_draw_text(11, 10, "G A M E   O V E R", 9); // bright red
+        hud_draw_text(9, 10, "G A M E   O V E R", 9); // bright red
     }
 
     // Final score label
-    hud_draw_text(14, 16, "FINAL SCORE", 7);
+    hud_draw_text(14, 17, "FINAL SCORE", 7);
 
     // Score value (6 digits, same formatting as hud_draw_score)
     {
@@ -171,7 +171,7 @@ void hud_draw_end_screen(uint8_t vsync, bool won)
         buf[2] = (char)('0' + (v % 10)); v /= 10;
         buf[1] = (char)('0' + (v % 10)); v /= 10;
         buf[0] = (char)('0' + (v % 10));
-        hud_draw_text(15, 17, buf, 11); // bright cyan
+        hud_draw_text(15, 18, buf, 11); // bright cyan
     }
 
     // Flashing PRESS START

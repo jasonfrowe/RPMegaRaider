@@ -272,7 +272,8 @@ static void update_ghost(enemy_t *e, int16_t px, int16_t py)
     if (e->x > (int16_t)(WORLD_W_PX - 16)) e->x = (int16_t)(WORLD_W_PX - 16);
 
     e->state = triggered ? CHASE : PATROL;
-    e->anim_frame = triggered ? 1u : 0u; // 0 = idle (red), 1 = armed (yellow spark)
+    // Blink continuously: alternate red/yellow every 8 frames.
+    e->anim_frame = (uint8_t)((++e->anim_tick >> 3) & 1u);
 }
 
 // ---------------------------------------------------------------------------
