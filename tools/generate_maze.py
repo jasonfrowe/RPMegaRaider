@@ -79,6 +79,12 @@ TILE_LADDER_BOT  = 110
 TILE_CHARGE_PACK  = 31
 TILE_MEMORY_SHARD = 32
 TILE_TERMINUS     = 33
+TILE_PORTAL_MIN   = 34   # portal archway 4×4 grid (tiles 34-49)
+TILE_PORTAL_MAX   = 49
+
+# Player start tile coords (must match player_start_x/y in runningman.c)
+PLAYER_START_COL = 10   # 80px / 8 = 10
+PLAYER_START_ROW = 557  # one tile above 4464px/8=558 so it's above player's head
 
 # Enemy spawn types
 SPAWN_CRAWLER = 0
@@ -387,12 +393,39 @@ def generate():
             fg_set(col, shard_row, TILE_MEMORY_SHARD)
 
     # --- 1 Terminus near top-center (floor NUM_FLOORS-2) ---
+    term_col = WORLD_W // 2   # fallback if placement fails
+    term_row = 2
     top_f = NUM_FLOORS - 2
     if top_f >= 0 and top_f < NUM_FLOORS:
         term_row = floor_row[top_f] - 1
         term_col = WORLD_W // 2 + rng_mod(40) - 20
         if fg_get(term_col, term_row) == TILE_EMPTY and fg_get(term_col, floor_row[top_f]) != TILE_EMPTY:
             fg_set(term_col, term_row, TILE_TERMINUS)
+
+    # --- Place 4×4 portal archway at entrance (near player start) ---
+    # Portal base sits on the floor; extends 4 tiles upward.
+    # Player start is at (PLAYER_START_COL, PLAYER_START_ROW).
+    # Place portal so base row = PLAYER_START_ROW, cols centered on player.
+    portal_base_row = PLAYER_START_ROW
+    portal_left_col = PLAYER_START_COL - 1  # center 4-wide on col 10
+    for pr in range(4):
+        for pc in range(4):
+            tile_id = TILE_PORTAL_MIN + pr * 4 + pc
+            r = portal_base_row - (3 - pr)  # row 0 of grid at top
+            c = portal_left_col + pc
+            if 0 <= r < WORLD_H and 0 <= c < WORLD_W:
+                fg_set(c, r, tile_id)
+
+    # --- Place 4×4 portal archway at exit (near terminus) ---
+    exit_base_row = term_row + 1  # terminus is 1 above floor
+    exit_left_col = term_col - 5  # offset left of terminus
+    for pr in range(4):
+        for pc in range(4):
+            tile_id = TILE_PORTAL_MIN + pr * 4 + pc
+            r = exit_base_row - (3 - pr)
+            c = exit_left_col + pc
+            if 0 <= r < WORLD_H and 0 <= c < WORLD_W:
+                fg_set(c, r, tile_id)
 
     # --- ~22 Charge Packs scattered on mid/deep floors (floors 1-18) ---
     charge_target = 22

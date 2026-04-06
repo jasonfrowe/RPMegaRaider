@@ -117,6 +117,8 @@
 #define TILE_CHARGE_PACK    31
 #define TILE_MEMORY_SHARD   32
 #define TILE_TERMINUS       33
+#define TILE_PORTAL_MIN     34   // portal archway tiles 34-49 (4×4 grid)
+#define TILE_PORTAL_MAX     49
 
 // ---------------------------------------------------------------------------
 // Scoring

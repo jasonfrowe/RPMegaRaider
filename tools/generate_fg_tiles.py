@@ -54,7 +54,13 @@ def make_tile(rows):
 def solid_tile(c):
     return make_tile([[c]*8]*8)
 
-T = 0  # transparent shorthand
+T = 0   # transparent
+W = 5   # bright highlight (white)
+Y = 15  # warm gold (yellow)
+H = 13  # crystal blue (highlight)
+G = 11  # deep moss (green)
+B = 14  # ice blue
+R = 12  # volcanic red
 
 # =============================================================================
 # DEEP ZONE tiles 1-10  —  volcanic basalt, dark rock
@@ -564,6 +570,200 @@ def pickup_terminus():
     ])
 
 # =============================================================================
+# Portal archway tiles 34-49 — 4×4 grid of 8×8 tiles forming a 32×32 arch
+# Placed at entrance (ground floor) and exit (top floor) as decoration.
+#
+# Palette:  T=0  W=5  Y=15  H=13  G=11  B=14  R=12
+#
+# Grid layout (tile IDs):
+#   34 35 36 37     row 0 (top of arch)
+#   38 39 40 41     row 1
+#   42 43 44 45     row 2
+#   46 47 48 49     row 3 (base)
+# =============================================================================
+
+def portal_00():
+    T=0
+    return make_tile([[T]*8]*8)
+
+def portal_01():
+    W=5; Y=15; T=0
+    return make_tile([
+        [T,T,T,T,W,W,W,W],
+        [T,T,T,T,W,W,W,W],
+        [T,T,T,W,W,W,W,W],
+        [T,T,T,W,W,W,W,W],
+        [T,T,Y,Y,Y,Y,Y,Y],
+        [T,T,Y,Y,Y,Y,Y,Y],
+        [T,Y,Y,Y,Y,W,W,W],
+        [T,Y,Y,Y,Y,W,W,W],
+    ])
+
+def portal_02():
+    W=5; Y=15; T=0
+    return make_tile([
+        [W,W,W,W,T,T,T,T],
+        [W,W,W,W,T,T,T,T],
+        [W,W,W,W,W,T,T,T],
+        [W,W,W,W,W,T,T,T],
+        [Y,Y,Y,Y,Y,Y,T,T],
+        [Y,Y,Y,Y,Y,Y,T,T],
+        [W,W,W,Y,Y,Y,Y,T],
+        [W,W,W,Y,Y,Y,Y,T],
+    ])
+
+def portal_03():
+    T=0
+    return make_tile([[T]*8]*8)
+
+def portal_10():
+    W=5; H=13; G=11; B=14; T=0
+    return make_tile([
+        [W,Y,Y,Y,W,W,W,W],
+        [W,Y,Y,Y,W,W,W,W],
+        [H,H,B,B,W,W,W,W],
+        [H,H,B,B,W,W,W,W],
+        [H,H,H,G,G,B,B,B],
+        [H,H,H,G,G,B,B,B],
+        [H,H,H,H,G,G,G,B],
+        [H,H,H,H,G,G,G,B],
+    ])
+
+def portal_11():
+    W=5; Y=15; H=13; G=11; B=14; T=0
+    return make_tile([
+        [W,W,W,W,Y,Y,Y,W],
+        [W,W,W,W,Y,Y,Y,W],
+        [W,W,W,W,B,B,H,H],
+        [W,W,W,W,B,B,H,H],
+        [B,B,B,B,G,G,H,H],
+        [B,B,B,B,G,G,H,H],
+        [B,B,B,B,G,G,G,H],
+        [B,B,B,B,G,G,G,H],
+    ])
+
+def portal_12():
+    H=13; T=0
+    return make_tile([
+        [T,T,T,T,T,T,T,T],
+        [T,T,T,T,T,T,T,T],
+        [T,T,T,T,T,T,T,T],
+        [T,T,T,T,T,T,T,T],
+        [H,T,T,T,T,T,T,T],
+        [H,T,T,T,T,T,T,T],
+        [H,H,T,T,T,T,T,T],
+        [H,H,T,T,T,T,T,T],
+    ])
+
+def portal_13():
+    T=0
+    return make_tile([[T]*8]*8)
+
+def portal_20():
+    H=13; G=11; T=0
+    return make_tile([
+        [H,H,H,H,H,G,G,G],
+        [H,H,H,H,H,G,G,G],
+        [H,H,H,H,H,G,G,G],
+        [H,H,H,H,H,G,G,G],
+        [H,H,H,H,H,H,G,G],
+        [H,H,H,H,H,H,G,G],
+        [H,H,H,H,H,H,H,G],
+        [H,H,H,H,H,H,H,G],
+    ])
+
+def portal_21():
+    G=11; B=14; T=0
+    return make_tile([
+        [G,G,B,B,B,B,G,G],
+        [G,G,B,B,B,B,G,G],
+        [G,G,G,B,B,B,B,G],
+        [G,G,G,B,B,B,B,G],
+        [G,G,G,G,B,B,G,G],
+        [G,G,G,G,B,B,G,G],
+        [G,G,G,G,G,B,B,G],
+        [G,G,G,G,G,B,B,G],
+    ])
+
+def portal_22():
+    H=13; G=11; T=0
+    return make_tile([
+        [G,G,H,H,H,H,H,H],
+        [G,G,H,H,H,H,H,H],
+        [G,G,G,H,H,H,H,H],
+        [G,G,G,H,H,H,H,H],
+        [G,G,G,G,H,H,H,H],
+        [G,G,G,G,H,H,H,H],
+        [G,G,G,G,H,H,H,H],
+        [G,G,G,G,H,H,H,H],
+    ])
+
+def portal_23():
+    H=13; T=0
+    return make_tile([
+        [H,T,T,T,T,T,T,T],
+        [H,T,T,T,T,T,T,T],
+        [H,H,T,T,T,T,T,T],
+        [H,H,T,T,T,T,T,T],
+        [H,H,H,T,T,T,T,T],
+        [H,H,H,T,T,T,T,T],
+        [H,H,H,H,T,T,T,T],
+        [H,H,H,H,T,T,T,T],
+    ])
+
+def portal_30():
+    H=13; G=11; T=0
+    return make_tile([
+        [H,H,H,H,H,H,H,H],
+        [H,H,H,H,H,H,H,H],
+        [T,G,G,G,G,G,G,G],
+        [T,T,G,G,G,G,G,G],
+        [T,T,T,G,G,G,G,G],
+        [T,T,T,T,G,G,G,G],
+        [T,T,T,T,T,T,G,G],
+        [T,T,T,T,T,T,T,T],
+    ])
+
+def portal_31():
+    H=13; G=11; B=14; R=12; T=0
+    return make_tile([
+        [H,H,H,G,G,G,G,G],
+        [H,H,H,H,G,G,G,G],
+        [G,G,G,H,H,B,R,R],
+        [G,G,H,H,H,B,B,B],
+        [G,H,H,H,H,B,R,R],
+        [H,H,H,H,H,B,B,B],
+        [G,H,H,H,H,H,B,R],
+        [G,G,G,G,H,H,H,H],
+    ])
+
+def portal_32():
+    H=13; G=11; B=14; R=12; T=0
+    return make_tile([
+        [G,G,G,G,G,H,H,H],
+        [G,G,G,G,H,H,H,H],
+        [B,H,H,G,G,G,G,G],
+        [B,H,H,H,G,G,G,G],
+        [B,H,H,H,H,G,G,G],
+        [B,H,H,H,H,H,G,G],
+        [R,B,H,H,H,H,H,G],
+        [B,B,H,H,H,H,G,G],
+    ])
+
+def portal_33():
+    H=13; G=11; T=0
+    return make_tile([
+        [H,H,H,H,H,H,H,H],
+        [H,H,H,H,H,H,H,H],
+        [G,G,G,G,G,G,G,T],
+        [G,G,G,G,G,G,T,T],
+        [G,G,G,G,G,T,T,T],
+        [G,G,G,G,T,T,T,T],
+        [G,G,T,T,T,T,T,T],
+        [T,T,T,T,T,T,T,T],
+    ])
+
+# =============================================================================
 # Build 256-tile array
 # =============================================================================
 tiles = [solid_tile(0)] * 256  # default: transparent empty
@@ -608,6 +808,24 @@ tiles[30] = upper_half_platform()
 tiles[31] = pickup_charge_pack()
 tiles[32] = pickup_memory_shard()
 tiles[33] = pickup_terminus()
+
+# Decoration tiles: 34-49  (portal archway, 4×4 grid of 8×8 tiles)
+tiles[34] = portal_00()
+tiles[35] = portal_01()
+tiles[36] = portal_02()
+tiles[37] = portal_03()
+tiles[38] = portal_10()
+tiles[39] = portal_11()
+tiles[40] = portal_12()
+tiles[41] = portal_13()
+tiles[42] = portal_20()
+tiles[43] = portal_21()
+tiles[44] = portal_22()
+tiles[45] = portal_23()
+tiles[46] = portal_30()
+tiles[47] = portal_31()
+tiles[48] = portal_32()
+tiles[49] = portal_33()
 
 # Ladder tiles
 tiles[107] = ladder_top()
