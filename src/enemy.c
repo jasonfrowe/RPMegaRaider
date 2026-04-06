@@ -264,7 +264,7 @@ static void update_ghost(enemy_t *e, int16_t px, int16_t py)
 
 void enemy_init(void)
 {
-    int fd = open("SPAWNS.BIN", O_RDONLY);
+    int fd = open("ROM:SPAWNS.BIN", O_RDONLY);
     if (fd < 0) {
         puts("enemy: SPAWNS.BIN not found — no enemies");
         s_num_enemies = 0;

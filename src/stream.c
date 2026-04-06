@@ -175,18 +175,18 @@ static void load_bg_column(uint16_t world_col, uint16_t row_start)
 
 int stream_open_files(void)
 {
-    s_fg_fd = open("MAZE_FG.BIN", O_RDONLY);
+    s_fg_fd = open("ROM:MAZE_FG.BIN", O_RDONLY);
     if (s_fg_fd < 0) { puts("stream: MAZE_FG.BIN open FAILED"); return -1; }
     puts("stream: MAZE_FG.BIN opened ok");
 
-    s_bg_fd = open("MAZE_BG.BIN", O_RDONLY);
+    s_bg_fd = open("ROM:MAZE_BG.BIN", O_RDONLY);
     if (s_bg_fd < 0) {
         puts("stream: MAZE_BG.BIN open FAILED");
         close(s_fg_fd); s_fg_fd = -1; return -1;
     }
     puts("stream: MAZE_BG.BIN opened ok");
 
-    s_fg_row_fd = open("MAZE_FG_ROWS.BIN", O_RDONLY);
+    s_fg_row_fd = open("ROM:MAZE_FG_ROWS.BIN", O_RDONLY);
     if (s_fg_row_fd < 0) {
         puts("stream: MAZE_FG_ROWS.BIN open FAILED");
         close(s_fg_fd); s_fg_fd = -1;
@@ -194,7 +194,7 @@ int stream_open_files(void)
     }
     puts("stream: MAZE_FG_ROWS.BIN opened ok");
 
-    s_bg_row_fd = open("MAZE_BG_ROWS.BIN", O_RDONLY);
+    s_bg_row_fd = open("ROM:MAZE_BG_ROWS.BIN", O_RDONLY);
     if (s_bg_row_fd < 0) {
         puts("stream: MAZE_BG_ROWS.BIN open FAILED");
         close(s_fg_fd); s_fg_fd = -1;

@@ -27,13 +27,12 @@ rp6502_asset(RPMegaRaider 0x13400 images/FG_TILES.BIN)      # FG tileset     →
 rp6502_asset(RPMegaRaider 0x15400 images/BG_TILES.BIN)      # BG tileset     → XRAM 0x5400
 rp6502_asset(RPMegaRaider 0x18400 images/FG_PAL.BIN)        # FG palette     → XRAM 0x8400
 rp6502_asset(RPMegaRaider 0x18420 images/BG_PAL.BIN)        # BG palette     → XRAM 0x8420
-rp6502_asset(RPMegaRaider help    src/help.txt)
-
-# External USB files (too large to embed, streamed at runtime):
-#   MAZE_FG.BIN, MAZE_BG.BIN          — column-major (fast horizontal scroll)
-#   MAZE_FG_ROWS.BIN, MAZE_BG_ROWS.BIN — row-major   (fast vertical scroll)
-# Run tools/generate_maze.py to produce all four files, then copy them to the
-# root of the USB drive.
+rp6502_asset(RPMegaRaider help           src/help.txt)
+rp6502_asset(RPMegaRaider MAZE_FG.BIN    images/MAZE_FG.BIN)
+rp6502_asset(RPMegaRaider MAZE_BG.BIN    images/MAZE_BG.BIN)
+rp6502_asset(RPMegaRaider MAZE_FG_ROWS.BIN images/MAZE_FG_ROWS.BIN)
+rp6502_asset(RPMegaRaider MAZE_BG_ROWS.BIN images/MAZE_BG_ROWS.BIN)
+rp6502_asset(RPMegaRaider SPAWNS.BIN     images/SPAWNS.BIN)
 
 rp6502_executable(RPMegaRaider 
     DATA file 
