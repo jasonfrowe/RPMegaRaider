@@ -1,64 +1,91 @@
-# RP6502 VSCode Scaffolding for LLVM-MOS
+# RPMegaRaider
 
-This is scaffolding for a new Picocomputer 6502 software project.
+Escape the data vault in a retro action-platformer built for RP6502 with llvm-mos.
 
-### LLVM PATH notes
+You play as a raider dropped into a giant scrolling maze full of hostile security drones, power pickups, and one very expensive Terminus reward. Grab points, survive the swarm, and leave through the exit portal when you decide the run is done.
 
-LLVM-MOS must be in your PATH. However, this may conflict with other LLVM
-installations, like the one that comes with your operating system.
-In that case, you can adjust the path for only CMake with a VSCode setting.
-Add a file `.vscode/settings.json` with the following contents. Adjust the
-path for where you installed LLVM-MOS.
-```
-{
-    "cmake.environment": {
-        "PATH": "~/llvm-mos/bin:${env:PATH}"
-    }
-}
-```
+## What This Game Is
 
-### Linux Tools Install:
- * [VSCode](https://code.visualstudio.com/). This has its own installer.
- * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
-   See PATH notes above.
- * The following tools installed from your package manager:
-    * `sudo apt install cmake python3 pip git build-essential`
-    * `pip install pyserial`
+- 320x240 pixel-art action with smooth camera scrolling in a huge 800x600 tile world.
+- Dual tile layers (foreground collision + background parallax) streamed from ROM.
+- Sprite-based player and enemy system with shield hits, enemy respawns, and hazard pressure.
+- OPL music + SFX tuned for arcade pacing.
 
-### Windows Tools Install:
- * [VSCode](https://code.visualstudio.com/). This has its own installer.
- * An install of [LLVM-MOS](https://llvm-mos.org/wiki/Welcome).
-   See PATH notes above.
- * Install python by typing `python3` which will launch the Microsoft Store
-   where you start the install. If python runs, this has already been done,
-   exit python with Ctrl-Z plus Return.
- * Install the python serial library with `pip install pyserial`.
- * `winget install -e --id Kitware.CMake`.
- * `winget install -e --id GnuWin32.Make`.
-    Add "C:\Program Files (x86)\GnuWin32\bin" to your path.
- * `winget install -e --id Git.Git`.
+## Objective
 
-### Getting Started:
-Go to the [GitHub template](https://github.com/picocomputer/vscode-llvm-mos)
-and select "Use this template" then "Create a new repository". GitHub will
-make a clean project for you to start with. Then you can download the
-repository and open the files.
+- Explore and score as much as possible.
+- Exit through the portal to end the run on your terms.
+- There is no shard requirement to finish.
 
-```
-$ git clone [path_to_github]
-$ cd [to_where_it_cloned]
-$ code .
-```
+## Scoring
 
-Install the extensions and choose the default or obvious choice if VSCode
-prompts you. Choose "[Unspecified]" for the CMake kit.
+- Charge Pack: 1~000
+- Memory Shard: 10~000
+- Terminus pickup: 50~000
+- Exit bonus: 23~000
+- Shield collision penalty: -250
 
-"Start Debugging" (F5) will build your project and upload it to the
-Picocomputer over a USB cable plugged into the Pico VGA. There is no debugger
-for the 6502; this process will exit immediately after the upload.
-If the default communications device doesn't work, edit ".rp6502" in the
-project root folder. This file will be created the first time you
-"Start Debugging" and will be ignored by git.
+Perfect-score target is 300~000.
 
-Edit CMakeLists.txt to add new source and asset files. It's
-pretty normal C/ASM development from here on.
+## Controls
+
+Keyboard:
+
+- Arrow Up: climb up ladder
+- Arrow Down: climb down ladder
+- Arrow Left / Arrow Right: move
+- Space: jump
+- Enter: Start (title/game-over transitions)
+
+Gamepad:
+
+- Left stick or D-pad: move and ladder climb
+- A: jump
+- Start: Start (title/game-over transitions)
+
+## Build
+
+Requirements:
+
+- llvm-mos SDK in your PATH
+- CMake 3.18+
+- Python 3
+- VS Code with CMake Tools and RP6502 tooling
+
+Configure and build:
+
+    cmake -S . -B build/target-native -DCMAKE_BUILD_TYPE=Release
+    cmake --build build/target-native
+
+Output package:
+
+- build/target-native/RPMegaRaider.rp6502
+
+## Run / Deploy
+
+From VS Code:
+
+- Use Start Debugging (F5) to build and upload to hardware.
+
+From terminal tools:
+
+    python tools/rp6502.py term
+
+If your serial or upload target is different, adjust local RP6502 tool settings for your machine.
+
+## Project Layout
+
+- src/main.c: game loop, state transitions, camera, render orchestration
+- src/stream.c: map streaming and ring-buffer commits
+- src/runningman.c: player movement, pickups, collision, win/lose
+- src/enemy.c: enemy behaviors, activation, drawing
+- src/hud.c: title, score, and end-screen rendering
+- images/: sprite, tile, palette, and maze assets
+- music/: music data
+- tools/: asset and helper generators
+
+## Links
+
+- Picocomputer: https://picocomputer.github.io
+- llvm-mos: https://llvm-mos.org/
+- RP6502 examples: https://github.com/picocomputer/examples
