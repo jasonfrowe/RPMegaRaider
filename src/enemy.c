@@ -37,6 +37,9 @@ static unsigned frame_ptr(EnemyType type, uint8_t anim_frame)
 static enemy_t s_enemies[MAX_ENEMIES];
 static uint8_t s_num_enemies = 0;
 
+extern int16_t player_start_y;
+static bool s_grace_period = true;
+
 // ---------------------------------------------------------------------------
 // Breadcrumb trail — Type 2 (TRACKER)
 // Player position is sampled every CRUMB_INTERVAL frames into a circular
@@ -82,7 +85,14 @@ static void respawn_offscreen(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
     if (spawn_x > (int16_t)(WORLD_W_PX - 16)) spawn_x = (int16_t)(WORLD_W_PX - 16);
 
     e->x = spawn_x;
-    e->y = py;           // always at the player's current height
+
+    // GHOST (Turret) should stay on its original spawn floor.
+    if (e->type == GHOST) {
+        e->y = e->spawn_y;
+    } else {
+        e->y = py;       // always at the player's current height
+    }
+
     e->spawn_x     = e->x;
     e->spawn_y     = e->y;
     e->state       = PATROL;
@@ -104,10 +114,8 @@ static void respawn_offscreen(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
 
 // ---------------------------------------------------------------------------
 // Type 1 — RUSHER
-// Fast horizontal sweeper (speed 3 — faster than the player).
-// Only reverses in the outer 1/3 of the visible screen so the player can
-// predict it and jump over it.  Exits the screen edge → DEAD with a short
-// delay, then reappears on the opposite side at the player's height.
+// Fast horizontal sweeper. Sweeps straight across the screen so the player 
+// can predict it and jump over it. Exits the screen edge → DEAD with a short delay.
 // ---------------------------------------------------------------------------
 static void update_rusher(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
 {
@@ -115,7 +123,8 @@ static void update_rusher(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
     int16_t screen_x = (int16_t)(e->x - cam_x);
 
     // Walked off-screen → enter DEAD with a short respawn delay.
-    if (screen_x < -16 || screen_x > (int16_t)(SCREEN_WIDTH + 16)) {
+    // Check if fully off screen, using a wider margin so fresh spawns don't instantly die.
+    if (screen_x < -32 || screen_x > (int16_t)(SCREEN_WIDTH + 32)) {
         e->state       = DEAD;
         e->state_timer = 120u;   // ~2 s before reappearing
         return;
@@ -123,11 +132,6 @@ static void update_rusher(enemy_t *e, int16_t px, int16_t py, int16_t cam_x)
 
     // Ensure a non-zero speed.
     if (e->vx == 0) e->vx = (int8_t)3;
-
-    // Reverse only in the outer 1/3 of the visible screen.
-    int16_t third = (int16_t)(SCREEN_WIDTH / 3);
-    if (screen_x <  third      && e->vx < 0) e->vx =  (int8_t)3;
-    if (screen_x > (third * 2) && e->vx > 0) e->vx = (int8_t)-3;
 
     e->x = (int16_t)(e->x + e->vx);
 
@@ -151,10 +155,13 @@ static void update_tracker(enemy_t *e, int16_t px, int16_t py)
     if (s_crumb_fill == 0) {
         int16_t dx = (int16_t)(px - e->x);
         int16_t dy = (int16_t)(py - e->y);
-        if (dx >  8) e->x++;
-        else if (dx < -8) e->x--;
-        if (dy >  8) e->y++;
-        else if (dy < -8) e->y--;
+        
+        int16_t step = (e->anim_tick & 1u) ? 2 : 1;
+        if (dx >  8) e->x = (int16_t)(e->x + step);
+        else if (dx < -8) e->x = (int16_t)(e->x - step);
+        if (dy >  8) e->y = (int16_t)(e->y + step);
+        else if (dy < -8) e->y = (int16_t)(e->y - step);
+        
         e->state = PATROL;
         if (++e->anim_tick >= 12u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
         return;
@@ -168,8 +175,10 @@ static void update_tracker(enemy_t *e, int16_t px, int16_t py)
     int16_t adx = (dx < 0) ? (int16_t)-dx : dx;
     int16_t ady = (dy < 0) ? (int16_t)-dy : dy;
 
-    if (adx > 6) e->x = (int16_t)(e->x + (dx > 0 ? 1 : -1));
-    if (ady > 6) e->y = (int16_t)(e->y + (dy > 0 ? 1 : -1));
+    // Smooth ~0.75x motion: alternate 1 and 2 pixels per frame (averages 1.5)
+    int16_t step = (e->anim_tick & 1u) ? 2 : 1;
+    if (adx > 6) e->x = (int16_t)(e->x + (dx > 0 ? step : -step));
+    if (ady > 6) e->y = (int16_t)(e->y + (dy > 0 ? step : -step));
 
     // Reached this crumb — advance toward the most recent one.
     if (adx < 16 && ady < 16) {
@@ -233,22 +242,17 @@ static void update_ghost(enemy_t *e, int16_t px, int16_t py)
     int16_t tx = triggered
         ? px
         : (int16_t)(px + (int16_t)(s_player_dir * 48));
-    int16_t ty = py;
 
+    // ONLY track horizontally to stay on its designated floor tile!
     int16_t dx  = (int16_t)(tx - e->x);
-    int16_t dy  = (int16_t)(ty - e->y);
     int16_t adx = (dx < 0) ? (int16_t)-dx : dx;
-    int16_t ady = (dy < 0) ? (int16_t)-dy : dy;
 
     int8_t speed = triggered ? (int8_t)2 : (int8_t)1;
     if (adx > 4) e->x = (int16_t)(e->x + (dx > 0 ? speed : (int8_t)-speed));
-    if (ady > 4) e->y = (int16_t)(e->y + (dy > 0 ? speed : (int8_t)-speed));
 
-    // World bounds.
+    // World bounds (only X is checked since Y doesn't change anymore).
     if (e->x < 16) e->x = 16;
     if (e->x > (int16_t)(WORLD_W_PX - 16)) e->x = (int16_t)(WORLD_W_PX - 16);
-    if (e->y < 8)  e->y = 8;
-    if (e->y > (int16_t)(WORLD_H_PX - 16)) e->y = (int16_t)(WORLD_H_PX - 16);
 
     e->state = triggered ? CHASE : PATROL;
     if (++e->anim_tick >= 10u) { e->anim_tick = 0u; e->anim_frame ^= 1u; }
@@ -285,12 +289,12 @@ void enemy_init(void)
         e->spawn_x   = (int16_t)x_px;
         e->spawn_y   = (int16_t)y_px;
         e->type      = (EnemyType)(typ <= 2u ? typ : 0u);
-        e->state     = PATROL;
+        e->state     = DEAD; // Start dead so they wait until grace period ends
         e->vx        = (e->type == RUSHER) ? ((i & 1u) ? (int8_t)3 : (int8_t)-3) : (int8_t)0;
         e->anim_frame = 0;
         e->anim_tick  = (uint8_t)(i * 7u); // stagger animation timings
         e->sprite_idx = (uint8_t)(i + 1u); // slots 1-7; slot 0 = player
-        e->state_timer = 0;
+        e->state_timer = (uint16_t)(i * 30u); // Stagger their spawns
         e->crumb_idx = 0;
         e->activated = 0;
     }
@@ -303,6 +307,15 @@ void enemy_init(void)
 void enemy_update_all(int16_t player_x, int16_t player_y, int16_t cam_x)
 {
     record_crumb(player_x, player_y);
+
+    if (s_grace_period) {
+        // Only start spawning enemies once the player climbs up a level (80 pixels up)
+        if (player_y < player_start_y - 80) {
+            s_grace_period = false;
+        } else {
+            return;
+        }
+    }
 
     uint8_t i;
     for (i = 0; i < s_num_enemies; i++) {
