@@ -9,7 +9,7 @@
 #include "enemy.h"
 
 int16_t player_start_x = 80;
-int16_t player_start_y = 4336;
+int16_t player_start_y = 4464;
 
 #define FRAME_SIZE      (16u * 16u * 2u)
 #define SPRITE_W        16
