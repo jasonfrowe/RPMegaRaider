@@ -45,4 +45,8 @@ bool enemy_overlaps_player(int16_t px, int16_t py);
 // Kill the first live enemy overlapping the player (12-px proximity). Returns true if killed.
 bool enemy_kill_overlapping_player(int16_t px, int16_t py);
 
+// Returns bitmask of enemy types currently within screen bounds (cam_x ± SCREEN_WIDTH+32).
+// Bit 0 = RUSHER present, bit 1 = TRACKER present, bit 2 = GHOST present.
+uint8_t enemy_get_active_type_mask(int16_t cam_x);
+
 #endif // ENEMY_H

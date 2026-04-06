@@ -106,6 +106,12 @@
 #define TEXT_H              30u         // 240px / 8px font = 30 rows
 
 // ---------------------------------------------------------------------------
+// OPL2 audio (native RIA OPL2 register space — NOT regular XRAM RAM)
+// ---------------------------------------------------------------------------
+#define OPL_ADDR            0xFE00U
+#define OPL_SIZE            0x0100U
+
+// ---------------------------------------------------------------------------
 // Pickup / special FG tile IDs  (above TILE_SOLID_MAX → not solid)
 // ---------------------------------------------------------------------------
 #define TILE_CHARGE_PACK    31

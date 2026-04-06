@@ -7,6 +7,7 @@
 #include "stream.h"
 #include "enemy.h"
 #include "hud.h"
+#include "sound.h"
 
 int16_t player_start_x = 80;
 int16_t player_start_y = 4464;
@@ -261,6 +262,7 @@ void runningman_update(void)
             on_ladder = false;
             y_vel     = -(int8_t)JUMP_VEL;
             y_frac    = 0;
+            sound_play_jump();
             // fall through to normal physics this frame
         } else {
             if (up) {
@@ -335,6 +337,7 @@ void runningman_update(void)
         y_vel       = -(int8_t)JUMP_VEL;
         grounded    = false;
         coyote_tick = 0;
+        sound_play_jump();
     }
     jump_btn_prev = jump_btn;
 
@@ -474,13 +477,16 @@ void runningman_update(void)
         if (t == TILE_CHARGE_PACK) {
             if (shield_charges < MAX_SHIELD_CHARGES) shield_charges++;
             hud_add_score(SCORE_CHARGE_PACK);
+            sound_play_pickup_charge();
             pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
         } else if (t == TILE_MEMORY_SHARD) {
             shard_count++;
             hud_add_score(SCORE_MEMORY_SHARD);
+            sound_play_pickup_shard();
             pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
         } else if (t == TILE_TERMINUS && shard_count >= SHARDS_NEEDED) {
             hud_add_score(SCORE_TERMINUS);
+            sound_play_terminus();
             game_won = true;
         }
     }
@@ -494,6 +500,7 @@ void runningman_update(void)
         if (shield_charges > 0u) {
             shield_charges--;
             hud_add_score(-(int32_t)SCORE_SHIELD_HIT_PENALTY);
+            sound_play_shield_hit();
             immunity_frames = IMMUNITY_FRAMES;
         } else {
             game_over = true;

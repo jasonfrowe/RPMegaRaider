@@ -7,6 +7,8 @@
 #include "stream.h"
 #include "enemy.h"
 #include "hud.h"
+#include "opl.h"
+#include "sound.h"
 
 // ---------------------------------------------------------------------------
 // Graphics initialisation
@@ -86,6 +88,9 @@ static void init_graphics(void)
     if (rc < 0) return;
 
     hud_init();
+    OPL_Config(1, OPL_ADDR);
+    opl_init();
+    sound_init();
 }
 
 // ---------------------------------------------------------------------------
@@ -99,9 +104,13 @@ typedef enum { STATE_TITLE = 0, STATE_PLAYING = 1, STATE_GAMEOVER = 2 } game_sta
 static uint8_t       vsync_last  = 0;
 static int16_t       s_cam_x     = 0;
 static int16_t       s_cam_y     = 0;
-static game_state_t  s_game_state = STATE_TITLE;
-static bool          s_was_won    = false;
-static bool          s_start_prev = false;
+static game_state_t  s_game_state  = STATE_TITLE;
+static bool          s_was_won     = false;
+static bool          s_start_prev  = false;
+// Delay before entering GAMEOVER on win so terminus fanfare can finish.
+// 5 notes x 6 ticks = 30, +6 buffer = 36 frames (~0.6 s at 60 Hz).
+#define WIN_FANFARE_TICKS 36u
+static uint8_t       s_win_delay   = 0;
 
 int main(void)
 {
@@ -130,6 +139,7 @@ int main(void)
     // Start on title screen
     s_game_state = STATE_TITLE;
     hud_draw_title_screen(RIA.vsync);
+    music_init(DEMO_MUSIC_FILENAME);
 
     while (true) {
         // Spin-wait for vsync; prefetch maze data during idle scan time.
@@ -187,6 +197,11 @@ int main(void)
             hud_draw_end_screen(RIA.vsync, s_was_won);
         }
 
+        // Audio: music sequencer + SFX (OPL writes via addr1, VBLANK-safe)
+        update_music();
+        sound_update(s_game_state == STATE_PLAYING
+            ? enemy_get_active_type_mask(s_cam_x) : 0u);
+
         // ------------------------------------------------------------------
         // ACTIVE SCAN: input + physics (no XRAM writes).
         // ------------------------------------------------------------------
@@ -199,21 +214,36 @@ int main(void)
         if (s_game_state == STATE_TITLE) {
             if (start_pressed) {
                 hud_clear();
+                sound_init();
+                opl_silence_all();
+                music_init(GAME_MUSIC_FILENAME);
                 s_game_state = STATE_PLAYING;
             }
         } else if (s_game_state == STATE_PLAYING) {
             runningman_update();
             enemy_update_all(runningman_get_x(), runningman_get_y(), s_cam_x);
 
-            if (!runningman_is_alive() || runningman_is_game_won()) {
-                s_was_won = runningman_is_game_won();
+            if (!runningman_is_alive()) {
+                s_was_won = false;
                 hud_clear();
+                opl_silence_all();
                 s_game_state = STATE_GAMEOVER;
+            } else if (runningman_is_game_won()) {
+                // Delay transition so the terminus fanfare can finish.
+                if (s_win_delay == 0u) {
+                    s_win_delay = WIN_FANFARE_TICKS;
+                } else if (--s_win_delay == 0u) {
+                    s_was_won = true;
+                    hud_clear();
+                    opl_silence_all();
+                    s_game_state = STATE_GAMEOVER;
+                }
             }
         } else { // STATE_GAMEOVER
             if (start_pressed) {
                 // Reset everything and return to title
                 hud_reset_score();
+                s_win_delay = 0;
                 runningman_init();
                 enemy_init();
                 {
@@ -226,6 +256,9 @@ int main(void)
                     stream_init(s_cam_x, s_cam_y);
                 }
                 hud_clear();
+                sound_init();
+                opl_silence_all();
+                music_init(DEMO_MUSIC_FILENAME);
                 s_game_state = STATE_TITLE;
             }
         }

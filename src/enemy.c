@@ -437,3 +437,22 @@ bool enemy_kill_overlapping_player(int16_t px, int16_t py)
     }
     return false;
 }
+
+uint8_t enemy_get_active_type_mask(int16_t cam_x)
+{
+    uint8_t mask = 0;
+    int16_t left  = (int16_t)(cam_x - 32);
+    int16_t right = (int16_t)(cam_x + (int16_t)SCREEN_WIDTH + 32);
+    uint8_t i;
+    for (i = 0; i < s_num_enemies; i++) {
+        enemy_t *e = &s_enemies[i];
+        if (e->state == DEAD) continue;
+        if (e->x < left || e->x > right) continue;
+        switch (e->type) {
+            case RUSHER:  mask |= 0x01u; break;
+            case TRACKER: mask |= 0x02u; break;
+            case GHOST:   mask |= 0x04u; break;
+        }
+    }
+    return mask;
+}
