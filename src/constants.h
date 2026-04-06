@@ -124,8 +124,9 @@
 // Scoring
 // ---------------------------------------------------------------------------
 #define SCORE_CHARGE_PACK        1000
-#define SCORE_MEMORY_SHARD        500
-#define SCORE_TERMINUS           5000
+#define SCORE_MEMORY_SHARD      10000
+#define SCORE_TERMINUS          50000
+#define SCORE_EXIT_BONUS        23000
 #define SCORE_SHIELD_HIT_PENALTY  250
 
 // ---------------------------------------------------------------------------

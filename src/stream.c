@@ -101,6 +101,14 @@ static bool     s_bg_stage_row_pending = false;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+// Seek and read an entire slice. Returns false if seek/read was short or failed.
+static bool read_slice(int fd, long offset, uint8_t *dst, uint16_t len)
+{
+    if (lseek(fd, offset, SEEK_SET) < 0) return false;
+    int got = read(fd, dst, len);
+    return got == (int)len;
+}
+
 // Write a column of tiles into one ring-buffer layer.
 // world_row_start is the world row of tiles[0]; each tile goes to the correct
 // ring row (world_row % RING_H) so the VGA wrap arithmetic works correctly.
@@ -156,17 +164,15 @@ static void write_ring_row(unsigned tilemap_base, uint16_t world_row,
 static void load_fg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    lseek(s_fg_fd, (long)world_col * WORLD_H + row_start, SEEK_SET);
-    read(s_fg_fd, buf, RING_H);
-    write_ring_col(FG_TILEMAP_BASE, world_col, row_start, buf);
+    if (read_slice(s_fg_fd, (long)world_col * WORLD_H + row_start, buf, RING_H))
+        write_ring_col(FG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
 static void load_bg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    lseek(s_bg_fd, (long)world_col * WORLD_H + row_start, SEEK_SET);
-    read(s_bg_fd, buf, RING_H);
-    write_ring_col(BG_TILEMAP_BASE, world_col, row_start, buf);
+    if (read_slice(s_bg_fd, (long)world_col * WORLD_H + row_start, buf, RING_H))
+        write_ring_col(BG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +216,14 @@ void stream_init(int16_t cam_x_px, int16_t cam_y_px)
     if (cam_x_px < 0) cam_x_px = 0;
     if (cam_y_px < 0) cam_y_px = 0;
 
+    // New run/reset: clear all persisted pickup clears and pending staged IO.
+    // Otherwise collected bonuses from a previous run remain missing.
+    s_cleared_fg_count = 0;
+    s_fg_stage_col_pending = false;
+    s_bg_stage_col_pending = false;
+    s_fg_stage_row_pending = false;
+    s_bg_stage_row_pending = false;
+
     // FG ring: loaded at 1:1 camera position.
     s_fg_loaded_left = (uint16_t)(cam_x_px / TILE_W);
     s_fg_loaded_top  = (uint16_t)(cam_y_px / TILE_H);
@@ -251,24 +265,82 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
     uint16_t bg_tx = (uint16_t)((cam_x_px / 2) / TILE_W);
     uint16_t bg_ty = (uint16_t)((cam_y_px / 2) / TILE_H);
 
+    // Predict the loaded window after any pending/new slice commits so row and
+    // column reads line up during diagonal scroll. Without this, a row staged
+    // in the same frame as a column can be read from the old left/top origin.
+    int8_t fg_col_delta = 0;
+    int8_t fg_row_delta = 0;
+    int8_t bg_col_delta = 0;
+    int8_t bg_row_delta = 0;
+
+    if (s_fg_stage_col_pending) {
+        fg_col_delta = s_fg_stage_col_delta;
+    } else if (fg_tx > s_fg_loaded_left) {
+        uint16_t c = s_fg_loaded_left + RING_W;
+        if (c < WORLD_W) fg_col_delta = 1;
+    } else if (s_fg_loaded_left > 0 && fg_tx < s_fg_loaded_left) {
+        fg_col_delta = -1;
+    }
+
+    if (s_fg_stage_row_pending) {
+        fg_row_delta = s_fg_stage_row_delta;
+    } else if (fg_ty > s_fg_loaded_top) {
+        uint16_t r = s_fg_loaded_top + RING_H;
+        if (r < WORLD_H) fg_row_delta = 1;
+    } else if (s_fg_loaded_top > 0 && fg_ty < s_fg_loaded_top) {
+        fg_row_delta = -1;
+    }
+
+    if (s_bg_stage_col_pending) {
+        bg_col_delta = s_bg_stage_col_delta;
+    } else if (bg_tx > s_bg_loaded_left) {
+        uint16_t c = s_bg_loaded_left + RING_W;
+        if (c < WORLD_W) bg_col_delta = 1;
+    } else if (s_bg_loaded_left > 0 && bg_tx < s_bg_loaded_left) {
+        bg_col_delta = -1;
+    }
+
+    if (s_bg_stage_row_pending) {
+        bg_row_delta = s_bg_stage_row_delta;
+    } else if (bg_ty > s_bg_loaded_top) {
+        uint16_t r = s_bg_loaded_top + RING_H;
+        if (r < WORLD_H) bg_row_delta = 1;
+    } else if (s_bg_loaded_top > 0 && bg_ty < s_bg_loaded_top) {
+        bg_row_delta = -1;
+    }
+
+    uint16_t fg_target_left = (fg_col_delta < 0)
+        ? (uint16_t)(s_fg_loaded_left - 1u)
+        : (uint16_t)(s_fg_loaded_left + (uint16_t)fg_col_delta);
+    uint16_t fg_target_top = (fg_row_delta < 0)
+        ? (uint16_t)(s_fg_loaded_top - 1u)
+        : (uint16_t)(s_fg_loaded_top + (uint16_t)fg_row_delta);
+    uint16_t bg_target_left = (bg_col_delta < 0)
+        ? (uint16_t)(s_bg_loaded_left - 1u)
+        : (uint16_t)(s_bg_loaded_left + (uint16_t)bg_col_delta);
+    uint16_t bg_target_top = (bg_row_delta < 0)
+        ? (uint16_t)(s_bg_loaded_top - 1u)
+        : (uint16_t)(s_bg_loaded_top + (uint16_t)bg_row_delta);
+
     // --- FG horizontal ---
     if (!s_fg_stage_col_pending) {
         if (fg_tx > s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left + RING_W;
             if (c < WORLD_W) {
-                lseek(s_fg_fd, (long)c * WORLD_H + s_fg_loaded_top, SEEK_SET);
-                read(s_fg_fd, s_fg_stage_col, RING_H);
-                patch_cleared_col(s_fg_stage_col, c, s_fg_loaded_top);
-                s_fg_stage_col_idx = c; s_fg_stage_col_row0 = s_fg_loaded_top;
-                s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
-            } else { s_fg_loaded_left++; }
+                if (read_slice(s_fg_fd, (long)c * WORLD_H + fg_target_top, s_fg_stage_col, RING_H)) {
+                    patch_cleared_col(s_fg_stage_col, c, fg_target_top);
+                    s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
+                    s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
+                }
+            }
+            // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_left > 0 && fg_tx < s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left - 1;
-            lseek(s_fg_fd, (long)c * WORLD_H + s_fg_loaded_top, SEEK_SET);
-            read(s_fg_fd, s_fg_stage_col, RING_H);
-            patch_cleared_col(s_fg_stage_col, c, s_fg_loaded_top);
-            s_fg_stage_col_idx = c; s_fg_stage_col_row0 = s_fg_loaded_top;
-            s_fg_stage_col_delta = -1; s_fg_stage_col_pending = true;
+            if (read_slice(s_fg_fd, (long)c * WORLD_H + fg_target_top, s_fg_stage_col, RING_H)) {
+                patch_cleared_col(s_fg_stage_col, c, fg_target_top);
+                s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
+                s_fg_stage_col_delta = -1; s_fg_stage_col_pending = true;
+            }
         }
     }
 
@@ -277,17 +349,18 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (bg_tx > s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left + RING_W;
             if (c < WORLD_W) {
-                lseek(s_bg_fd, (long)c * WORLD_H + s_bg_loaded_top, SEEK_SET);
-                read(s_bg_fd, s_bg_stage_col, RING_H);
-                s_bg_stage_col_idx = c; s_bg_stage_col_row0 = s_bg_loaded_top;
-                s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
-            } else { s_bg_loaded_left++; }
+                if (read_slice(s_bg_fd, (long)c * WORLD_H + bg_target_top, s_bg_stage_col, RING_H)) {
+                    s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
+                    s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
+                }
+            }
+            // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_left > 0 && bg_tx < s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left - 1;
-            lseek(s_bg_fd, (long)c * WORLD_H + s_bg_loaded_top, SEEK_SET);
-            read(s_bg_fd, s_bg_stage_col, RING_H);
-            s_bg_stage_col_idx = c; s_bg_stage_col_row0 = s_bg_loaded_top;
-            s_bg_stage_col_delta = -1; s_bg_stage_col_pending = true;
+            if (read_slice(s_bg_fd, (long)c * WORLD_H + bg_target_top, s_bg_stage_col, RING_H)) {
+                s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
+                s_bg_stage_col_delta = -1; s_bg_stage_col_pending = true;
+            }
         }
     }
 
@@ -296,19 +369,20 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (fg_ty > s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top + RING_H;
             if (r < WORLD_H) {
-                lseek(s_fg_row_fd, (long)r * WORLD_W + s_fg_loaded_left, SEEK_SET);
-                read(s_fg_row_fd, s_fg_stage_row, RING_W);
-                patch_cleared_row(s_fg_stage_row, r, s_fg_loaded_left);
-                s_fg_stage_row_idx = r; s_fg_stage_row_col0 = s_fg_loaded_left;
-                s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
-            } else { s_fg_loaded_top++; }
+                if (read_slice(s_fg_row_fd, (long)r * WORLD_W + fg_target_left, s_fg_stage_row, RING_W)) {
+                    patch_cleared_row(s_fg_stage_row, r, fg_target_left);
+                    s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
+                    s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
+                }
+            }
+            // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_top > 0 && fg_ty < s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top - 1;
-            lseek(s_fg_row_fd, (long)r * WORLD_W + s_fg_loaded_left, SEEK_SET);
-            read(s_fg_row_fd, s_fg_stage_row, RING_W);
-            patch_cleared_row(s_fg_stage_row, r, s_fg_loaded_left);
-            s_fg_stage_row_idx = r; s_fg_stage_row_col0 = s_fg_loaded_left;
-            s_fg_stage_row_delta = -1; s_fg_stage_row_pending = true;
+            if (read_slice(s_fg_row_fd, (long)r * WORLD_W + fg_target_left, s_fg_stage_row, RING_W)) {
+                patch_cleared_row(s_fg_stage_row, r, fg_target_left);
+                s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
+                s_fg_stage_row_delta = -1; s_fg_stage_row_pending = true;
+            }
         }
     }
 
@@ -317,17 +391,18 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (bg_ty > s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top + RING_H;
             if (r < WORLD_H) {
-                lseek(s_bg_row_fd, (long)r * WORLD_W + s_bg_loaded_left, SEEK_SET);
-                read(s_bg_row_fd, s_bg_stage_row, RING_W);
-                s_bg_stage_row_idx = r; s_bg_stage_row_col0 = s_bg_loaded_left;
-                s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
-            } else { s_bg_loaded_top++; }
+                if (read_slice(s_bg_row_fd, (long)r * WORLD_W + bg_target_left, s_bg_stage_row, RING_W)) {
+                    s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
+                    s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
+                }
+            }
+            // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_top > 0 && bg_ty < s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top - 1;
-            lseek(s_bg_row_fd, (long)r * WORLD_W + s_bg_loaded_left, SEEK_SET);
-            read(s_bg_row_fd, s_bg_stage_row, RING_W);
-            s_bg_stage_row_idx = r; s_bg_stage_row_col0 = s_bg_loaded_left;
-            s_bg_stage_row_delta = -1; s_bg_stage_row_pending = true;
+            if (read_slice(s_bg_row_fd, (long)r * WORLD_W + bg_target_left, s_bg_stage_row, RING_W)) {
+                s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
+                s_bg_stage_row_delta = -1; s_bg_stage_row_pending = true;
+            }
         }
     }
 }

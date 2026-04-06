@@ -129,13 +129,13 @@ void hud_draw_title_screen(uint8_t vsync)
     uint8_t color = s_cycle_colors[(vsync / 8u) % 6u];
 
     // Draw title every frame (color cycles)
-    hud_draw_text(4,  12, "M E G A   R A I D E R", color);
+    hud_draw_text(10,  8, "M E G A   R A I D E R", color);
 
     // Subtitle — dim white
-    hud_draw_text(9,  14, "ESCAPE THE DATA VAULT", 7);
+    hud_draw_text(10,  10, "ESCAPE THE DATA VAULT", 7);
 
     // Controls hint — grey
-    hud_draw_text(6,  22, "COLLECT SHARDS  REACH TERMINUS", 8);
+    hud_draw_text(8,  22, "EXPLORE  COLLECT  ESCAPE!", 8);
     hud_draw_text(8,  23, "SHIELD ABSORBS ENEMY HITS", 8);
 
     // Flashing PRESS START — bright white when on
@@ -152,13 +152,13 @@ void hud_draw_title_screen(uint8_t vsync)
 void hud_draw_end_screen(uint8_t vsync, bool won)
 {
     if (won) {
-        hud_draw_text(13, 12, "Y O U   W I N !", 10); // bright green
+        hud_draw_text(11, 12, "Y O U   W I N !", 10); // bright green
     } else {
-        hud_draw_text(13, 12, "G A M E   O V E R", 9); // bright red
+        hud_draw_text(11, 10, "G A M E   O V E R", 9); // bright red
     }
 
     // Final score label
-    hud_draw_text(14, 14, "FINAL SCORE", 7);
+    hud_draw_text(14, 16, "FINAL SCORE", 7);
 
     // Score value (6 digits, same formatting as hud_draw_score)
     {
@@ -171,13 +171,13 @@ void hud_draw_end_screen(uint8_t vsync, bool won)
         buf[2] = (char)('0' + (v % 10)); v /= 10;
         buf[1] = (char)('0' + (v % 10)); v /= 10;
         buf[0] = (char)('0' + (v % 10));
-        hud_draw_text(17, 15, buf, 11); // bright cyan
+        hud_draw_text(15, 17, buf, 11); // bright cyan
     }
 
     // Flashing PRESS START
     if ((vsync / 30u) & 1u) {
-        hud_draw_text(14, 26, "PRESS  START", 15);
+        hud_draw_text(14, 22, "PRESS  START", 15);
     } else {
-        clear_cells(TEXT_DATA_BASE + (26u * TEXT_W + 14u) * 3u, 12);
+        clear_cells(TEXT_DATA_BASE + (22u * TEXT_W + 14u) * 3u, 12);
     }
 }

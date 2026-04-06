@@ -34,7 +34,7 @@ rp6502_asset(RPMegaRaider MAZE_FG_ROWS.BIN images/MAZE_FG_ROWS.BIN)
 rp6502_asset(RPMegaRaider MAZE_BG_ROWS.BIN images/MAZE_BG_ROWS.BIN)
 rp6502_asset(RPMegaRaider SPAWNS.BIN     images/SPAWNS.BIN)
 rp6502_asset(RPMegaRaider COSMIC1.BIN    music/COSMIC1.BIN)
-rp6502_asset(RPMegaRaider COSMIC2.BIN    music/COSMIC2.BIN)
+rp6502_asset(RPMegaRaider RAIDER1.BIN    music/RAIDER1.BIN)
 
 rp6502_executable(RPMegaRaider 
     DATA file 

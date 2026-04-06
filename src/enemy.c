@@ -253,8 +253,19 @@ static void update_ghost(enemy_t *e, int16_t px, int16_t py)
     int16_t dx  = (int16_t)(tx - e->x);
     int16_t adx = (dx < 0) ? (int16_t)-dx : dx;
 
-    int8_t speed = triggered ? (int8_t)2 : (int8_t)1;
-    if (adx > 4) e->x = (int16_t)(e->x + (dx > 0 ? speed : (int8_t)-speed));
+    // Smooth ~0.75x player speed: accumulate 3 quarter-px/frame, move 1px per 4 qpx.
+    // Normal: 3 qpx/frame → 0.75 px/frame (player max = 2 px/frame → 0.375x).
+    // Triggered: 6 qpx/frame → 1.5 px/frame (0.75x player).
+    uint8_t qspeed = triggered ? 6u : 3u;
+    if (adx > 4) {
+        e->crumb_idx += qspeed;  // reuse crumb_idx as fractional accumulator
+        int16_t step = (int16_t)(e->crumb_idx >> 2);
+        e->crumb_idx &= 3u;
+        if (step > 0)
+            e->x = (int16_t)(e->x + (dx > 0 ? step : -step));
+    } else {
+        e->crumb_idx = 0u;
+    }
 
     // World bounds (only X is checked since Y doesn't change anymore).
     if (e->x < 16) e->x = 16;

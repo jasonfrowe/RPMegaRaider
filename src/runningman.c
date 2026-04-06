@@ -75,6 +75,7 @@ static uint16_t ladder_col;
 static uint8_t  shield_charges  = 3;
 static uint8_t  shard_count     = 0;
 static uint8_t  immunity_frames = 0;
+static bool     terminus_collected = false;
 static bool     game_over       = false;
 static bool     game_won        = false;
 static bool     pickup_pending  = false;
@@ -92,6 +93,23 @@ static uint8_t read_tile(uint16_t col, uint16_t row)
 
 static bool tile_is_solid(uint8_t t)  { return t >= SOLID_MIN && t <= SOLID_MAX; }
 static bool tile_is_ladder(uint8_t t) { return t >= LADDER_MIN && t <= LADDER_MAX; }
+static bool tile_is_portal(uint8_t t) { return t >= TILE_PORTAL_MIN && t <= TILE_PORTAL_MAX; }
+
+// Returns true if any tile overlapping the player hitbox is within [min_t, max_t].
+static bool player_over_tile_range(int16_t px, int16_t py, uint8_t min_t, uint8_t max_t)
+{
+    uint16_t col_l = (uint16_t)((px + HITBOX_X_OFF) / TILE_W);
+    uint16_t col_r = (uint16_t)((px + HITBOX_X_OFF + HITBOX_W - 1) / TILE_W);
+    uint16_t row_t = (uint16_t)(py / TILE_H);
+    uint16_t row_b = (uint16_t)((py + SPRITE_H - 1) / TILE_H);
+    for (uint16_t r = row_t; r <= row_b; r++) {
+        for (uint16_t c = col_l; c <= col_r; c++) {
+            uint8_t t = read_tile(c, r);
+            if (t >= min_t && t <= max_t) return true;
+        }
+    }
+    return false;
+}
 
 // Ladder tile overlapping the player's body (head row through sprite bottom row).
 // Returns the tile column, or 0xFFFF if none.
@@ -205,6 +223,7 @@ void runningman_init(void)
     ladder_col      = 0;
     shield_charges  = 3;
     shard_count     = 0;
+    terminus_collected = false;
     game_over       = false;
     game_won        = false;
     immunity_frames = 180;  // 3 seconds of starting immunity
@@ -277,7 +296,8 @@ void runningman_update(void)
                     } else if (ladder_col_in_body(x_pos, new_y) == 0xFFFF) {
                         // Use new_y (not the stale y_pos) so we land on the platform
                         // tile rather than one row inside the shaft.
-                        uint16_t feet_row = (uint16_t)((new_y + SPRITE_H) / TILE_H);
+                        // Use ceiling division to avoid truncation clipping into ceiling
+                        uint16_t feet_row = (uint16_t)((new_y + SPRITE_H + TILE_H - 1) / TILE_H);
                         y_pos     = (int16_t)(feet_row * TILE_H) - SPRITE_H;
                         y_frac    = 0;
                         on_ladder = false;
@@ -296,7 +316,8 @@ void runningman_update(void)
                     if (new_y > WORLD_H_PX - SPRITE_H)
                         new_y = WORLD_H_PX - SPRITE_H;
                     if (feet_on_hard_ground(x_pos, new_y)) {
-                        uint16_t row = (uint16_t)((new_y + SPRITE_H) / TILE_H);
+                        // Use ceiling division to avoid truncation clipping into floor
+                        uint16_t row = (uint16_t)((new_y + SPRITE_H + TILE_H - 1) / TILE_H);
                         y_pos     = (int16_t)(row * TILE_H) - SPRITE_H;
                         y_frac    = 0;
                         on_ladder = false;
@@ -319,7 +340,7 @@ void runningman_update(void)
                     set_frame(current_frame == 8u ? 9u : 8u);
                 }
                 jump_btn_prev = jump_btn;
-                return; // skip all normal physics
+                goto post_movement_checks; // skip physics but still process pickups/collisions
             }
             // on_ladder was cleared — fall through to normal physics
         }
@@ -467,6 +488,7 @@ void runningman_update(void)
         }
     }
 
+post_movement_checks:
     // -----------------------------------------------------------------------
     // Pickup detection (tile under player centre)
     // -----------------------------------------------------------------------
@@ -484,9 +506,16 @@ void runningman_update(void)
             hud_add_score(SCORE_MEMORY_SHARD);
             sound_play_pickup_shard();
             pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
-        } else if (t == TILE_TERMINUS && shard_count >= SHARDS_NEEDED) {
+        } else if (t == TILE_TERMINUS && !terminus_collected) {
+            // Terminus is a one-time high-value prize.
             hud_add_score(SCORE_TERMINUS);
             sound_play_terminus();
+            terminus_collected = true;
+            pickup_pending = true; pickup_wx = cx; pickup_wy = cy;
+        } else if (player_over_tile_range(x_pos, y_pos, TILE_PORTAL_MIN, TILE_PORTAL_MAX)
+                   && y_pos <= 4336) {
+            // Exit portal ends the run — player chooses when to leave.
+            hud_add_score(SCORE_EXIT_BONUS);
             game_won = true;
         }
     }

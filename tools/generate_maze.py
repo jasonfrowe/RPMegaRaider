@@ -47,6 +47,7 @@ BG tile meanings (generate_bg_tiles.py — circuit board theme):
 """
 
 import random, struct, os
+from collections import deque
 
 # ---------------------------------------------------------------------------
 # World constants
@@ -54,14 +55,13 @@ import random, struct, os
 WORLD_W     = 800   # columns (tiles)
 WORLD_H     = 600   # rows (tiles)
 
-NUM_FLOORS      = 30
-BASE_SPACING    = 14    # rows between floor lines (112px ≈ half screen — 2–3 floors visible)
-FLOOR_OFFSET    = 4     # ±4 row random offset per floor
-MIN_FLOOR_GAP   = 6     # minimum rows between adjacent floors
-GROUND_ROW      = 560   # row of the ground floor (rows 560..599 are solid fill)
+NUM_FLOORS          = 30
+MIN_FLOOR_SPACING   = 8     # minimum rows between floors
+MAX_FLOOR_SPACING   = 14    # maximum rows between floors
+GROUND_ROW          = 560   # floor[0] — where the player starts (row 560)
 BORDER_COLS     = 2     # solid columns on each world edge
 
-LADDERS_PER_PAIR = 4    # ladder shafts connecting adjacent floor pairs
+LADDERS_PER_PAIR = 8    # ladder shafts connecting adjacent floor pairs
 GAPS_PER_FLOOR   = 3    # drop-through gaps per floor (not ground floor)
 MIN_GAP_SPACING  = 15   # minimum tiles between gap starts
 GAP_WIDTH_MIN    = 4
@@ -227,13 +227,10 @@ def generate():
     floor_row[0] = GROUND_ROW
 
     for f in range(1, NUM_FLOORS):
-        base = GROUND_ROW - f * BASE_SPACING
-        off  = rng_mod(2 * FLOOR_OFFSET + 1) - FLOOR_OFFSET
-        row  = base + off
-        # Clamp so floors don't overlap
-        ceiling = floor_row[f - 1] - MIN_FLOOR_GAP
-        row = max(min(row, ceiling), 2)
-        floor_row[f] = row
+        spacing = MIN_FLOOR_SPACING + rng_mod(MAX_FLOOR_SPACING - MIN_FLOOR_SPACING + 1)
+        floor_row[f] = floor_row[f - 1] - spacing
+        if floor_row[f] < 4:
+            floor_row[f] = 4
 
     # ------------------------------------------------------------------
     # 3. Solid border walls and top/bottom border rows.
@@ -337,7 +334,105 @@ def generate():
             fg_set(col, shaft_bot, TILE_LADDER_BOT)
 
     # ------------------------------------------------------------------
-    # 7. BG circuit board components — ICs, LEDs, capacitors.
+    # 7. Vertical walls — dead ends spanning floor-to-floor
+    # ------------------------------------------------------------------
+    # Place walls deterministically across left/middle/right map sections
+    # to ensure balanced dead-end distribution (not just left side).
+    walls_placed = []
+    for f in range(1, NUM_FLOORS - 1):
+        r_this = floor_row[f]
+        r_above = floor_row[f + 1]
+        if r_this < 6 or r_above < 2 or r_above >= r_this:
+            continue
+        # Gather ladder columns near this floor so we don't block them
+        nearby_ladders = set()
+        if f - 1 < len(ladder_col_set):
+            for lc in ladder_col_set[f - 1]:
+                for dx in range(-3, 4):
+                    nearby_ladders.add(lc + dx)
+        if f < len(ladder_col_set):
+            for lc in ladder_col_set[f]:
+                for dx in range(-3, 4):
+                    nearby_ladders.add(lc + dx)
+
+        # Divide map into 5 sections and place 2-3 walls per floor across sections,
+        # cycling through sections to spread them across the map width.
+        usable = WORLD_W - 2 * BORDER_COLS
+        sect = usable // 5
+        
+        num_walls = 2 + rng_mod(2)  # 2-3 walls per floor
+        walls_this_floor = 0
+        
+        for s_idx in range(5):
+            if walls_this_floor >= num_walls:
+                break
+            # Pick a column in this section with random offset
+            base = BORDER_COLS + sect * s_idx + sect // 2
+            col = base + rng_mod(sect // 2 + 1) - (sect // 4)
+            col = max(BORDER_COLS + 4, min(WORLD_W - BORDER_COLS - 4, col))
+            
+            if fg_get(col, r_this) == TILE_EMPTY:  # gap — skip
+                continue
+            if col in nearby_ladders:
+                continue
+            # Wall spans from one tile above this floor up to the floor above
+            wall_tiles = []
+            for row in range(r_above, r_this):
+                if row < 1:
+                    continue
+                if fg_get(col, row) == TILE_EMPTY:
+                    fg_set(col, row, zone_fill_tile(row))
+                    wall_tiles.append((col, row))
+            if wall_tiles:
+                walls_placed.append(wall_tiles)
+                walls_this_floor += 1
+
+    # ------------------------------------------------------------------
+    # 8. Reachability check — remove walls that isolate floor sections
+    # ------------------------------------------------------------------
+    def flood_fill(sc, sr):
+        vis = bytearray(WORLD_W * WORLD_H)
+        q = deque([(sc, sr)])
+        vis[sc * WORLD_H + sr] = 1
+        while q:
+            c, r = q.popleft()
+            for dc, dr in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nc, nr = c + dc, r + dr
+                if 0 <= nc < WORLD_W and 0 <= nr < WORLD_H:
+                    idx = nc * WORLD_H + nr
+                    if not vis[idx] and not (1 <= fg[idx] <= 30):
+                        vis[idx] = 1
+                        q.append((nc, nr))
+        return vis
+
+    start_air_row = floor_row[0] - 1
+    reachable = flood_fill(PLAYER_START_COL, start_air_row)
+
+    # Remove walls (newest first) until every floor is reachable
+    while walls_placed:
+        all_ok = True
+        for f in range(1, NUM_FLOORS):
+            r = floor_row[f]
+            if r < 2:
+                continue
+            check_row = r - 1
+            found = False
+            for c in range(BORDER_COLS + 2, WORLD_W - BORDER_COLS - 2, 5):
+                if reachable[c * WORLD_H + check_row]:
+                    found = True
+                    break
+            if not found:
+                all_ok = False
+                break
+        if all_ok:
+            break
+        last = walls_placed.pop()
+        for (c, r) in last:
+            fg_set(c, r, TILE_EMPTY)
+        reachable = flood_fill(PLAYER_START_COL, start_air_row)
+
+    # ------------------------------------------------------------------
+    # 9. BG circuit board components — ICs, LEDs, capacitors.
     # ------------------------------------------------------------------
     seed_rng(0xCAFE)   # fresh seed for component placement
 
@@ -373,11 +468,11 @@ def generate():
                 bg_set(col, r + 2, BG_T_JUNC)
 
     # ------------------------------------------------------------------
-    # 8. Pickup and spawn placement.
+    # 10. Pickup and spawn placement.
     # ------------------------------------------------------------------
     seed_rng(0xDEAD)   # fresh seed for pickup / spawn placement
 
-    # --- 5 Memory Shards on high floors (floors 22-28) ---
+    # --- 5 Memory Shards on high floors (floors 22-26) ---
     shard_floors = [22, 23, 24, 25, 26]
     for f in shard_floors:
         if f >= NUM_FLOORS:
@@ -385,65 +480,107 @@ def generate():
         r = floor_row[f]
         if r < 2:
             continue
-        # Place shard one tile above the platform surface (row r-1)
         shard_row = r - 1
-        col = BORDER_COLS + 10 + rng_mod(WORLD_W - 2 * BORDER_COLS - 20)
-        # Skip if a ladder or gap is here
-        if fg_get(col, shard_row) == TILE_EMPTY and fg_get(col, r) != TILE_EMPTY:
-            fg_set(col, shard_row, TILE_MEMORY_SHARD)
+        for _ in range(30):
+            col = BORDER_COLS + 10 + rng_mod(WORLD_W - 2 * BORDER_COLS - 20)
+            if (fg_get(col, shard_row) == TILE_EMPTY and
+                fg_get(col, r) != TILE_EMPTY and
+                reachable[col * WORLD_H + shard_row]):
+                fg_set(col, shard_row, TILE_MEMORY_SHARD)
+                break
 
     # --- 1 Terminus near top-center (floor NUM_FLOORS-2) ---
-    term_col = WORLD_W // 2   # fallback if placement fails
+    term_col = WORLD_W // 2
     term_row = 2
     top_f = NUM_FLOORS - 2
     if top_f >= 0 and top_f < NUM_FLOORS:
         term_row = floor_row[top_f] - 1
-        term_col = WORLD_W // 2 + rng_mod(40) - 20
-        if fg_get(term_col, term_row) == TILE_EMPTY and fg_get(term_col, floor_row[top_f]) != TILE_EMPTY:
-            fg_set(term_col, term_row, TILE_TERMINUS)
+        for _ in range(50):
+            tc = WORLD_W // 2 + rng_mod(40) - 20
+            if (fg_get(tc, term_row) == TILE_EMPTY and
+                fg_get(tc, floor_row[top_f]) != TILE_EMPTY and
+                reachable[tc * WORLD_H + term_row]):
+                term_col = tc
+                fg_set(term_col, term_row, TILE_TERMINUS)
+                break
 
-    # --- Place 4×4 portal archway at entrance (near player start) ---
-    # Portal base sits on the floor; extends 4 tiles upward.
-    # Player start is at (PLAYER_START_COL, PLAYER_START_ROW).
-    # Place portal so base row = PLAYER_START_ROW, cols centered on player.
-    portal_base_row = PLAYER_START_ROW
-    portal_left_col = PLAYER_START_COL - 1  # center 4-wide on col 10
+    # --- Entrance portal archway (4x4 grid) centered on player ---
+    portal_base = floor_row[0] - 1    # just above ground surface
+    portal_left = PLAYER_START_COL - 1  # cols 9-12, player at col 10
     for pr in range(4):
         for pc in range(4):
             tile_id = TILE_PORTAL_MIN + pr * 4 + pc
-            r = portal_base_row - (3 - pr)  # row 0 of grid at top
-            c = portal_left_col + pc
+            r = portal_base - (3 - pr)
+            c = portal_left + pc
             if 0 <= r < WORLD_H and 0 <= c < WORLD_W:
                 fg_set(c, r, tile_id)
 
-    # --- Place 4×4 portal archway at exit (near terminus) ---
-    exit_base_row = term_row + 1  # terminus is 1 above floor
-    exit_left_col = term_col - 5  # offset left of terminus
-    for pr in range(4):
-        for pc in range(4):
-            tile_id = TILE_PORTAL_MIN + pr * 4 + pc
-            r = exit_base_row - (3 - pr)
-            c = exit_left_col + pc
-            if 0 <= r < WORLD_H and 0 <= c < WORLD_W:
-                fg_set(c, r, tile_id)
+    # --- Exit portal archway (4x4 grid) on the floor, offset right of terminus ---
+    # Place portal on the same floor level as entrance (base row = floor_row[top_f] - 1),
+    # but offset right so terminus tile remains visible and playable.
+    if top_f >= 0 and top_f < NUM_FLOORS:
+        exit_base = floor_row[top_f] - 1  # same level as entrance
+        exit_left = term_col + 8  # 8 tiles to the right of terminus
+        if exit_left + 3 >= WORLD_W - BORDER_COLS:  # too close to right edge
+            exit_left = term_col - 8  # place to the left instead
+        
+        for pr in range(4):
+            for pc in range(4):
+                tile_id = TILE_PORTAL_MIN + pr * 4 + pc
+                r = exit_base - (3 - pr)
+                c = exit_left + pc
+                if 0 <= r < WORLD_H and 0 <= c < WORLD_W:
+                    # Do NOT skip the terminus — just don't place portal on it
+                    if r == term_row and c == term_col:
+                        continue
+                    fg_set(c, r, tile_id)
 
-    # --- ~22 Charge Packs scattered on mid/deep floors (floors 1-18) ---
-    charge_target = 22
-    placed_charges = 0
-    attempts = 0
-    while placed_charges < charge_target and attempts < 2000:
-        attempts += 1
-        f = 1 + rng_mod(18)
-        if f >= NUM_FLOORS:
-            continue
+    # --- Charge Packs: dense, floor-by-floor spread with upper-floor bias ---
+    # Use deterministic sections across each floor so the top of the maze
+    # always contains pickups instead of depending on random retries.
+    for f in range(1, NUM_FLOORS - 1):
         r = floor_row[f]
         if r < 2:
             continue
         pack_row = r - 1
-        col = BORDER_COLS + 5 + rng_mod(WORLD_W - 2 * BORDER_COLS - 10)
-        if fg_get(col, pack_row) == TILE_EMPTY and fg_get(col, r) != TILE_EMPTY:
+
+        if f >= 20:
+            target = 8
+        elif f >= 10:
+            target = 6
+        else:
+            target = 5
+
+        usable = WORLD_W - 2 * BORDER_COLS
+        sect = max(1, usable // (target + 1))
+        placed = 0
+
+        for s in range(target):
+            base = BORDER_COLS + sect * (s + 1)
+            candidate_offsets = [0, -3, 3, -6, 6, -9, 9]
+            for off in candidate_offsets:
+                col = base + off
+                if col <= BORDER_COLS + 1 or col >= WORLD_W - BORDER_COLS - 1:
+                    continue
+                if fg_get(col, pack_row) != TILE_EMPTY:
+                    continue
+                if fg_get(col, r) == TILE_EMPTY:
+                    continue
+                fg_set(col, pack_row, TILE_CHARGE_PACK)
+                placed += 1
+                break
+
+        # Fallback random fill if a floor still couldn't reach target.
+        tries = 0
+        while placed < target and tries < 180:
+            tries += 1
+            col = BORDER_COLS + 5 + rng_mod(WORLD_W - 2 * BORDER_COLS - 10)
+            if fg_get(col, pack_row) != TILE_EMPTY:
+                continue
+            if fg_get(col, r) == TILE_EMPTY:
+                continue
             fg_set(col, pack_row, TILE_CHARGE_PACK)
-            placed_charges += 1
+            placed += 1
 
     # --- Enemy spawns ---
     # Place 3 Crawlers on mid floors (floors 3-14), spaced across world
@@ -494,13 +631,12 @@ def generate():
         spawns.append((x_px, y_px, SPAWN_TURRET))
 
     # ------------------------------------------------------------------
-    # 9. Player start position output.
+    # 11. Player start position output.
     # ------------------------------------------------------------------
-    # Player starts just above floor[1] (one floor up from ground).
-    # This places them where they can immediately see the ground floor
-    # below AND one or two elevated platforms above.
-    start_x = 10 * 8                      # pixel x (tile column 10)
-    start_y = (floor_row[1] - 2) * 8     # 2 tiles above floor[1]
+    # Player starts on floor[0] (ground level, row 560).
+    # Sprite top is 2 tiles above the floor surface.
+    start_x = PLAYER_START_COL * 8            # pixel x (80)
+    start_y = (floor_row[0] - 2) * 8         # pixel y (4464)
 
     return start_x, start_y, spawns
 

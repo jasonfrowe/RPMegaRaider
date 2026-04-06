@@ -2,7 +2,7 @@
 #define OPL_H
 
 #define DEMO_MUSIC_FILENAME "ROM:COSMIC1.BIN"
-#define GAME_MUSIC_FILENAME "ROM:COSMIC2.BIN"
+#define GAME_MUSIC_FILENAME "ROM:RAIDER1.BIN"
 
 typedef struct {
     uint16_t delay_ms; 
