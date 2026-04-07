@@ -171,7 +171,7 @@ void hud_draw_end_screen(uint8_t vsync, bool won)
         buf[2] = (char)('0' + (v % 10)); v /= 10;
         buf[1] = (char)('0' + (v % 10)); v /= 10;
         buf[0] = (char)('0' + (v % 10));
-        hud_draw_text(15, 18, buf, 11); // bright cyan
+        hud_draw_text(15, 19, buf, 11); // bright cyan
     }
 
     // Flashing PRESS START
