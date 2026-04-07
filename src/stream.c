@@ -23,7 +23,7 @@
 // cleared tiles in that slice so they stay empty even after the camera
 // scrolls away and back.
 // ---------------------------------------------------------------------------
-#define MAX_CLEARED_FG 32
+#define MAX_CLEARED_FG 240 // max number of cleared pickups we can track at once (arbitrary limit)
 typedef struct { uint16_t wx; uint16_t wy; } cleared_tile_t;
 static cleared_tile_t s_cleared_fg[MAX_CLEARED_FG];
 static uint8_t        s_cleared_fg_count = 0;
