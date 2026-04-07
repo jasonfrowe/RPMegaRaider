@@ -185,6 +185,21 @@ def fill_bg_rect(col0, row0, col1, row1, tile):
         for r in range(row0, row1 + 1):
             bg_set(c, r, tile)
 
+def draw_ladder(col, r_top, r_bot):
+    """Draw a ladder shaft from the upper floor row down to one row above lower floor."""
+    if col <= BORDER_COLS or col >= WORLD_W - BORDER_COLS:
+        return
+
+    shaft_top = r_top
+    shaft_bot = r_bot - 1
+    if shaft_bot <= shaft_top:
+        return
+
+    fg_set(col, shaft_top, TILE_LADDER_TOP)
+    for row in range(shaft_top + 1, shaft_bot):
+        fg_set(col, row, TILE_LADDER_MID1 if (row & 1) else TILE_LADDER_MID2)
+    fg_set(col, shaft_bot, TILE_LADDER_BOT)
+
 # ---------------------------------------------------------------------------
 # Layout generator
 # ---------------------------------------------------------------------------
@@ -296,12 +311,31 @@ def generate():
     # 6. Ladder shafts connecting adjacent floor pairs.
     # ------------------------------------------------------------------
     ladder_col_set = [[] for _ in range(NUM_FLOORS - 1)]
+    forced_start_ladder_col = None
 
     for f in range(NUM_FLOORS - 1):
         r_bot = floor_row[f]
         r_top = floor_row[f + 1]
         if r_top < 2 or r_bot >= WORLD_H - 1 or r_bot <= r_top:
             continue
+
+        # Ensure the first screen has an obvious climb route right of spawn.
+        if f == 0:
+            forced_candidates = [
+                PLAYER_START_COL + 9,
+                PLAYER_START_COL + 12,
+                PLAYER_START_COL + 6,
+            ]
+            for forced_col in forced_candidates:
+                if forced_col >= WORLD_W - BORDER_COLS:
+                    continue
+                gaps_top = gap_cols[f + 1] if f + 1 < NUM_FLOORS else []
+                if any(gs <= forced_col < ge for gs, ge in gaps_top):
+                    continue
+                ladder_col_set[f].append(forced_col)
+                draw_ladder(forced_col, r_top, r_bot)
+                forced_start_ladder_col = forced_col
+                break
 
         usable = WORLD_W - 2 * BORDER_COLS
         sect   = usable // (LADDERS_PER_PAIR + 1)
@@ -319,19 +353,7 @@ def generate():
                 col = base  # fallback to section base
 
             ladder_col_set[f].append(col)
-
-            # Draw ladder shaft: r_top row (top rung) to r_bot - 1 (bottom rung)
-            shaft_top = r_top   # top rung (in / adjacent to upper floor)
-            shaft_bot = r_bot - 1  # bottom rung (one row above lower floor)
-
-            # Clear any solid tile at top rung row on the upper floor column
-            fg_set(col, shaft_top, TILE_LADDER_TOP)
-
-            for row in range(shaft_top + 1, shaft_bot):
-                tile = TILE_LADDER_MID1 if (row & 1) else TILE_LADDER_MID2
-                fg_set(col, row, tile)
-
-            fg_set(col, shaft_bot, TILE_LADDER_BOT)
+            draw_ladder(col, r_top, r_bot)
 
     # ------------------------------------------------------------------
     # 7. Vertical walls — dead ends spanning floor-to-floor
@@ -471,6 +493,31 @@ def generate():
     # 10. Pickup and spawn placement.
     # ------------------------------------------------------------------
     seed_rng(0xDEAD)   # fresh seed for pickup / spawn placement
+
+    # --- 3 guidance sparks right of the start ladder over ~3 screen widths ---
+    # These are charge packs on the ground path to pull the player right.
+    ground_row = floor_row[0]
+    spark_row = ground_row - 1
+    spark_anchor = forced_start_ladder_col if forced_start_ladder_col is not None else (PLAYER_START_COL + 9)
+    spark_targets = [spark_anchor + 12, spark_anchor + 52, spark_anchor + 92]
+
+    for target in spark_targets:
+        placed = False
+        for delta in [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6]:
+            col = target + delta
+            if col <= BORDER_COLS + 2 or col >= WORLD_W - BORDER_COLS - 2:
+                continue
+            if fg_get(col, spark_row) != TILE_EMPTY:
+                continue
+            if fg_get(col, ground_row) == TILE_EMPTY:
+                continue
+            fg_set(col, spark_row, TILE_CHARGE_PACK)
+            placed = True
+            break
+        if not placed:
+            fallback = min(max(target, BORDER_COLS + 3), WORLD_W - BORDER_COLS - 3)
+            if fg_get(fallback, ground_row) != TILE_EMPTY and fg_get(fallback, spark_row) == TILE_EMPTY:
+                fg_set(fallback, spark_row, TILE_CHARGE_PACK)
 
     # --- 5 Memory Shards on high floors (floors 22-26) ---
     shard_floors = [22, 23, 24, 25, 26]

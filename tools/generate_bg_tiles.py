@@ -42,11 +42,11 @@ PALETTE = [
     rgb555( 12,  22,  10),   # 1  dark PCB substrate
     rgb555( 20,  35,  15),   # 2  mid substrate
     rgb555( 30,  52,  22),   # 3  lighter substrate area
-    rgb555(130,  92,   8),   # 4  dark gold trace edge
-    rgb555(195, 150,  18),   # 5  gold trace main
-    rgb555(240, 205,  65),   # 6  bright gold / solder highlight
-    rgb555(175,  75,  18),   # 7  copper pad dark
-    rgb555(218, 155,  75),   # 8  copper pad light
+    rgb555( 18,  78, 120),   # 4  dark cyan trace edge
+    rgb555( 36, 155, 210),   # 5  cyan trace main
+    rgb555(110, 230, 255),   # 6  bright cyan highlight
+    rgb555( 18,  92,  42),   # 7  deep green pad dark
+    rgb555( 72, 182, 118),   # 8  bright green pad light
     rgb555( 18,  18,  32),   # 9  IC chip body dark
     rgb555( 32,  32,  58),   # 10 IC chip body mid
     rgb555( 65,  65,  95),   # 11 IC chip highlight

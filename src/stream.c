@@ -101,42 +101,42 @@ static bool     s_bg_stage_row_pending = false;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// Seek and read an entire slice. Returns false if seek/read was short or failed.
-static bool read_slice(int fd, long offset, uint8_t *dst, uint16_t len)
+// Seek and read a slice. Returns the number of bytes successfully read.
+static uint16_t read_slice(int fd, long offset, uint8_t *dst, uint16_t len)
 {
-    if (lseek(fd, offset, SEEK_SET) < 0) return false;
+    if (lseek(fd, offset, SEEK_SET) < 0) return 0;
     uint16_t total = 0;
     while (total < len) {
         int got = read(fd, dst + total, (uint16_t)(len - total));
-        if (got <= 0) return false;
+        if (got <= 0) break;
         total = (uint16_t)(total + (uint16_t)got);
     }
-    return true;
+    return total;
 }
 
-// Safe wrapper to read a column slice without reading past the world height
-static bool read_col_data(int fd, uint16_t world_col, uint16_t row_start, uint8_t *dst)
+// Safe wrapper to read a column slice and pad with pad_tile if short
+static bool read_col_data(int fd, uint16_t world_col, uint16_t row_start, uint8_t *dst, uint8_t pad_tile)
 {
     uint16_t count;
     if (row_start >= WORLD_H) count = 0;
     else count = (row_start + RING_H > WORLD_H) ? (uint16_t)(WORLD_H - row_start) : RING_H;
 
-    if (count > 0 && !read_slice(fd, (long)world_col * WORLD_H + row_start, dst, count)) return false;
+    uint16_t got = (count > 0) ? read_slice(fd, (long)world_col * WORLD_H + row_start, dst, count) : 0;
 
-    for (uint16_t i = count; i < RING_H; i++) dst[i] = 0; // Pad empty
+    for (uint16_t i = got; i < RING_H; i++) dst[i] = pad_tile; // Pad empty
     return true;
 }
 
-// Safe wrapper to read a row slice without reading past the world width
-static bool read_row_data(int fd, uint16_t world_row, uint16_t col_start, uint8_t *dst)
+// Safe wrapper to read a row slice and pad with pad_tile if short
+static bool read_row_data(int fd, uint16_t world_row, uint16_t col_start, uint8_t *dst, uint8_t pad_tile)
 {
     uint16_t count;
     if (col_start >= WORLD_W) count = 0;
     else count = (col_start + RING_W > WORLD_W) ? (uint16_t)(WORLD_W - col_start) : RING_W;
 
-    if (count > 0 && !read_slice(fd, (long)world_row * WORLD_W + col_start, dst, count)) return false;
+    uint16_t got = (count > 0) ? read_slice(fd, (long)world_row * WORLD_W + col_start, dst, count) : 0;
 
-    for (uint16_t i = count; i < RING_W; i++) dst[i] = 0; // Pad empty
+    for (uint16_t i = got; i < RING_W; i++) dst[i] = pad_tile; // Pad empty
     return true;
 }
 
@@ -195,14 +195,14 @@ static void write_ring_row(unsigned tilemap_base, uint16_t world_row,
 static void load_fg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    if (read_col_data(s_fg_fd, world_col, row_start, buf))
+    if (read_col_data(s_fg_fd, world_col, row_start, buf, TILE_EMPTY))
         write_ring_col(FG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
 static void load_bg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    if (read_col_data(s_bg_fd, world_col, row_start, buf))
+    if (read_col_data(s_bg_fd, world_col, row_start, buf, TILE_EMPTY))
         write_ring_col(BG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
@@ -358,7 +358,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (fg_tx > s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left + RING_W;
             if (c < WORLD_W) {
-                if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col)) {
+                if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col, TILE_EMPTY)) {
                     patch_cleared_col(s_fg_stage_col, c, fg_target_top);
                     s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
                     s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
@@ -367,7 +367,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_left > 0 && fg_tx < s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left - 1;
-            if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col)) {
+            if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col, TILE_EMPTY)) {
                 patch_cleared_col(s_fg_stage_col, c, fg_target_top);
                 s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
                 s_fg_stage_col_delta = -1; s_fg_stage_col_pending = true;
@@ -380,7 +380,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (bg_tx > s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left + RING_W;
             if (c < WORLD_W) {
-                if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col)) {
+                if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col, TILE_EMPTY)) {
                     s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
                     s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
                 }
@@ -388,7 +388,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_left > 0 && bg_tx < s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left - 1;
-            if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col)) {
+            if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col, TILE_EMPTY)) {
                 s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
                 s_bg_stage_col_delta = -1; s_bg_stage_col_pending = true;
             }
@@ -400,7 +400,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (fg_ty > s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top + RING_H;
             if (r < WORLD_H) {
-                if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row)) {
+                if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row, TILE_EMPTY)) {
                     patch_cleared_row(s_fg_stage_row, r, fg_target_left);
                     s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
                     s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
@@ -409,7 +409,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_top > 0 && fg_ty < s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top - 1;
-            if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row)) {
+            if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row, TILE_EMPTY)) {
                 patch_cleared_row(s_fg_stage_row, r, fg_target_left);
                 s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
                 s_fg_stage_row_delta = -1; s_fg_stage_row_pending = true;
@@ -422,7 +422,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (bg_ty > s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top + RING_H;
             if (r < WORLD_H) {
-                if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row)) {
+                if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row, TILE_EMPTY)) {
                     s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
                     s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
                 }
@@ -430,7 +430,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_top > 0 && bg_ty < s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top - 1;
-            if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row)) {
+            if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row, TILE_EMPTY)) {
                 s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
                 s_bg_stage_row_delta = -1; s_bg_stage_row_pending = true;
             }
