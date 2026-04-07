@@ -117,7 +117,6 @@ int main(void)
     xregn(0, 0, 0, 1, KEYBOARD_INPUT);
     xregn(0, 0, 2, 1, GAMEPAD_INPUT);
 
-    init_graphics();
     init_input_system();
 
     if (stream_open_files() < 0) return 1;
@@ -135,6 +134,9 @@ int main(void)
     }
 
     enemy_init();
+
+    // Initialize graphics AFTER heavy stream_init XRAM writes to prevent VGA overload.
+    init_graphics();
 
     // Start on title screen
     s_game_state = STATE_TITLE;

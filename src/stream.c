@@ -38,7 +38,7 @@ static void patch_cleared_col(uint8_t *buf, uint16_t col_world, uint16_t row_sta
         if (s_cleared_fg[i].wx != col_world) continue;
         uint16_t wy = s_cleared_fg[i].wy;
         if (wy < row_start || wy >= row_start + RING_H) continue;
-        buf[wy - row_start] = 0;
+        buf[wy - row_start] = TILE_EMPTY;
     }
 }
 
@@ -52,7 +52,7 @@ static void patch_cleared_row(uint8_t *buf, uint16_t row_world, uint16_t col_sta
         if (s_cleared_fg[i].wy != row_world) continue;
         uint16_t wx = s_cleared_fg[i].wx;
         if (wx < col_start || wx >= col_start + RING_W) continue;
-        buf[wx - col_start] = 0;
+        buf[wx - col_start] = TILE_EMPTY;
     }
 }
 
@@ -114,6 +114,32 @@ static bool read_slice(int fd, long offset, uint8_t *dst, uint16_t len)
     return true;
 }
 
+// Safe wrapper to read a column slice without reading past the world height
+static bool read_col_data(int fd, uint16_t world_col, uint16_t row_start, uint8_t *dst)
+{
+    uint16_t count;
+    if (row_start >= WORLD_H) count = 0;
+    else count = (row_start + RING_H > WORLD_H) ? (uint16_t)(WORLD_H - row_start) : RING_H;
+
+    if (count > 0 && !read_slice(fd, (long)world_col * WORLD_H + row_start, dst, count)) return false;
+
+    for (uint16_t i = count; i < RING_H; i++) dst[i] = 0; // Pad empty
+    return true;
+}
+
+// Safe wrapper to read a row slice without reading past the world width
+static bool read_row_data(int fd, uint16_t world_row, uint16_t col_start, uint8_t *dst)
+{
+    uint16_t count;
+    if (col_start >= WORLD_W) count = 0;
+    else count = (col_start + RING_W > WORLD_W) ? (uint16_t)(WORLD_W - col_start) : RING_W;
+
+    if (count > 0 && !read_slice(fd, (long)world_row * WORLD_W + col_start, dst, count)) return false;
+
+    for (uint16_t i = count; i < RING_W; i++) dst[i] = 0; // Pad empty
+    return true;
+}
+
 // Write a column of tiles into one ring-buffer layer.
 // world_row_start is the world row of tiles[0]; each tile goes to the correct
 // ring row (world_row % RING_H) so the VGA wrap arithmetic works correctly.
@@ -169,14 +195,14 @@ static void write_ring_row(unsigned tilemap_base, uint16_t world_row,
 static void load_fg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    if (read_slice(s_fg_fd, (long)world_col * WORLD_H + row_start, buf, RING_H))
+    if (read_col_data(s_fg_fd, world_col, row_start, buf))
         write_ring_col(FG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
 static void load_bg_column(uint16_t world_col, uint16_t row_start)
 {
     uint8_t buf[RING_H];
-    if (read_slice(s_bg_fd, (long)world_col * WORLD_H + row_start, buf, RING_H))
+    if (read_col_data(s_bg_fd, world_col, row_start, buf))
         write_ring_col(BG_TILEMAP_BASE, world_col, row_start, buf);
 }
 
@@ -332,7 +358,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (fg_tx > s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left + RING_W;
             if (c < WORLD_W) {
-                if (read_slice(s_fg_fd, (long)c * WORLD_H + fg_target_top, s_fg_stage_col, RING_H)) {
+                if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col)) {
                     patch_cleared_col(s_fg_stage_col, c, fg_target_top);
                     s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
                     s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
@@ -341,7 +367,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_left > 0 && fg_tx < s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left - 1;
-            if (read_slice(s_fg_fd, (long)c * WORLD_H + fg_target_top, s_fg_stage_col, RING_H)) {
+            if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col)) {
                 patch_cleared_col(s_fg_stage_col, c, fg_target_top);
                 s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
                 s_fg_stage_col_delta = -1; s_fg_stage_col_pending = true;
@@ -354,7 +380,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (bg_tx > s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left + RING_W;
             if (c < WORLD_W) {
-                if (read_slice(s_bg_fd, (long)c * WORLD_H + bg_target_top, s_bg_stage_col, RING_H)) {
+                if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col)) {
                     s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
                     s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
                 }
@@ -362,7 +388,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_left > 0 && bg_tx < s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left - 1;
-            if (read_slice(s_bg_fd, (long)c * WORLD_H + bg_target_top, s_bg_stage_col, RING_H)) {
+            if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col)) {
                 s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
                 s_bg_stage_col_delta = -1; s_bg_stage_col_pending = true;
             }
@@ -374,7 +400,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (fg_ty > s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top + RING_H;
             if (r < WORLD_H) {
-                if (read_slice(s_fg_row_fd, (long)r * WORLD_W + fg_target_left, s_fg_stage_row, RING_W)) {
+                if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row)) {
                     patch_cleared_row(s_fg_stage_row, r, fg_target_left);
                     s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
                     s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
@@ -383,7 +409,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_top > 0 && fg_ty < s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top - 1;
-            if (read_slice(s_fg_row_fd, (long)r * WORLD_W + fg_target_left, s_fg_stage_row, RING_W)) {
+            if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row)) {
                 patch_cleared_row(s_fg_stage_row, r, fg_target_left);
                 s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
                 s_fg_stage_row_delta = -1; s_fg_stage_row_pending = true;
@@ -396,7 +422,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
         if (bg_ty > s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top + RING_H;
             if (r < WORLD_H) {
-                if (read_slice(s_bg_row_fd, (long)r * WORLD_W + bg_target_left, s_bg_stage_row, RING_W)) {
+                if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row)) {
                     s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
                     s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
                 }
@@ -404,7 +430,7 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
             // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_top > 0 && bg_ty < s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top - 1;
-            if (read_slice(s_bg_row_fd, (long)r * WORLD_W + bg_target_left, s_bg_stage_row, RING_W)) {
+            if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row)) {
                 s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
                 s_bg_stage_row_delta = -1; s_bg_stage_row_pending = true;
             }
@@ -467,7 +493,7 @@ void stream_write_fg_tile(uint16_t wx, uint16_t wy, uint8_t tile)
     RIA.rw0   = tile;
 
     // Record cleared pickups so they persist when the ring reloads from disk.
-    if (tile == 0u && s_cleared_fg_count < MAX_CLEARED_FG) {
+    if (tile == TILE_EMPTY && s_cleared_fg_count < MAX_CLEARED_FG) {
         uint8_t i;
         for (i = 0u; i < s_cleared_fg_count; i++) {
             if (s_cleared_fg[i].wx == wx && s_cleared_fg[i].wy == wy) return; // already tracked

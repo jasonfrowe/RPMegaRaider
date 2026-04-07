@@ -266,7 +266,7 @@ void update_music() {
                     return;
                 }
 
-                music_buf_idx = 512; // Force immediate buffer reload
+                music_buf_idx = music_bytes_ready; // Force immediate buffer reload
                 music_just_looped = true;
                 continue;
 
