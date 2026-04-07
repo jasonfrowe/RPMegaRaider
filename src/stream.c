@@ -105,8 +105,13 @@ static bool     s_bg_stage_row_pending = false;
 static bool read_slice(int fd, long offset, uint8_t *dst, uint16_t len)
 {
     if (lseek(fd, offset, SEEK_SET) < 0) return false;
-    int got = read(fd, dst, len);
-    return got == (int)len;
+    uint16_t total = 0;
+    while (total < len) {
+        int got = read(fd, dst + total, (uint16_t)(len - total));
+        if (got <= 0) return false;
+        total = (uint16_t)(total + (uint16_t)got);
+    }
+    return true;
 }
 
 // Write a column of tiles into one ring-buffer layer.
