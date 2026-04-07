@@ -265,7 +265,6 @@ void runningman_update(void)
                 x_pos = (int16_t)((uint16_t)col * TILE_W) - HITBOX_X_OFF;
                 x_vel = 0; x_frac = 0;
                 y_vel = 0; y_frac = 0;
-                y_pos += TILE_H;  // drop into the shaft
                 grounded = false;
             }
         }
@@ -316,8 +315,8 @@ void runningman_update(void)
                     if (new_y > WORLD_H_PX - SPRITE_H)
                         new_y = WORLD_H_PX - SPRITE_H;
                     if (feet_on_hard_ground(x_pos, new_y)) {
-                        // Use ceiling division to avoid truncation clipping into floor
-                        uint16_t row = (uint16_t)((new_y + SPRITE_H + TILE_H - 1) / TILE_H);
+                        // Match normal fall collision snap so we land on top of the floor tile.
+                        uint16_t row = (uint16_t)((new_y + SPRITE_H) / TILE_H);
                         y_pos     = (int16_t)(row * TILE_H) - SPRITE_H;
                         y_frac    = 0;
                         on_ladder = false;
