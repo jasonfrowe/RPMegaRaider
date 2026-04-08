@@ -14,6 +14,7 @@ int16_t runningman_get_x(void);
 int16_t runningman_get_y(void);
 uint8_t runningman_get_shield(void);
 uint8_t runningman_get_shards(void);
+bool    runningman_shield_is_visible(void);
 bool    runningman_is_alive(void);
 bool    runningman_is_game_won(void);
 void    runningman_flush_tile_writes(void);

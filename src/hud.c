@@ -129,14 +129,14 @@ void hud_draw_title_screen(uint8_t vsync)
     uint8_t color = s_cycle_colors[(vsync / 8u) % 6u];
 
     // Draw title every frame (color cycles)
-    hud_draw_text(10,  8, "M E G A   R A I D E R", color);
+    hud_draw_text(10,  18, "M E G A   R A I D E R", color);
 
     // Subtitle — dim white
-    hud_draw_text(10,  10, "ESCAPE THE DATA VAULT", 7);
+    hud_draw_text(10,  21, "ESCAPE THE DATA VAULT", 7);
 
     // Controls hint — grey
-    hud_draw_text(8,  22, "COLLECT SHARDS REACH EXIT", 8);
-    hud_draw_text(8,  23, "SHIELD ABSORBS ENEMY HITS", 8);
+    hud_draw_text(8,  23, "COLLECT SHARDS REACH EXIT", 6);
+    hud_draw_text(8,  24, "SHIELD ABSORBS ENEMY HITS", 6);
 
     // Flashing PRESS START — bright white when on
     if ((vsync / 30u) & 1u) {
@@ -154,11 +154,11 @@ void hud_draw_end_screen(uint8_t vsync, bool won)
     if (won) {
         hud_draw_text(12, 10, "Y O U   W I N !", 10); // bright green
     } else {
-        hud_draw_text(12, 10, "G A M E   O V E R", 9); // bright red
+        hud_draw_text(11, 10, "G A M E   O V E R", 9); // bright red
     }
 
     // Final score label
-    hud_draw_text(14, 17, "FINAL SCORE", 7);
+    hud_draw_text(14, 17, "FINAL  SCORE", 7);
 
     // Score value (6 digits, same formatting as hud_draw_score)
     {

@@ -75,6 +75,7 @@ static uint16_t ladder_col;
 static uint8_t  shield_charges  = 3;
 static uint8_t  shard_count     = 0;
 static uint8_t  immunity_frames = 0;
+static bool     shield_cooldown_active = false;
 static bool     terminus_collected = false;
 static bool     game_over       = false;
 static bool     game_won        = false;
@@ -227,6 +228,7 @@ void runningman_init(void)
     game_over       = false;
     game_won        = false;
     immunity_frames = 180;  // 3 seconds of starting immunity
+    shield_cooldown_active = false;
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, x_pos_px, x_pos);
     xram0_struct_set(RUNNING_MAN_CONFIG, vga_mode4_sprite_t, y_pos_px, y_pos);
     set_frame(FRAME_IDLE_START);
@@ -524,12 +526,14 @@ post_movement_checks:
     // -----------------------------------------------------------------------
     if (immunity_frames > 0u) {
         --immunity_frames;
+        if (immunity_frames == 0u) shield_cooldown_active = false;
     } else if (enemy_kill_overlapping_player(x_pos, y_pos)) {
         if (shield_charges > 0u) {
             shield_charges--;
             hud_add_score(-(int32_t)SCORE_SHIELD_HIT_PENALTY);
             sound_play_shield_hit();
             immunity_frames = IMMUNITY_FRAMES;
+            shield_cooldown_active = true;
         } else {
             game_over = true;
         }
@@ -541,6 +545,12 @@ post_movement_checks:
 // ---------------------------------------------------------------------------
 uint8_t runningman_get_shield(void)   { return shield_charges; }
 uint8_t runningman_get_shards(void)   { return shard_count; }
+bool runningman_shield_is_visible(void)
+{
+    if (!shield_cooldown_active || immunity_frames == 0u) return true;
+    // Blink while cooling down after a hit: visible 4 frames, hidden 4 frames.
+    return ((immunity_frames >> 2) & 1u) == 0u;
+}
 bool    runningman_is_alive(void)     { return !game_over; }
 bool    runningman_is_game_won(void)  { return game_won; }
 

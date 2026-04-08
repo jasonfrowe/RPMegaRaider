@@ -175,7 +175,7 @@ int main(void)
             {
                 uint8_t sc = runningman_get_shield();
                 unsigned shield_cfg = ENEMY_CFG(SHIELD_SLOT);
-                if (sc > 0u) {
+                if (sc > 0u && runningman_shield_is_visible()) {
                     unsigned fidx = (sc >= 3u) ? 0u : (sc == 2u) ? 1u : 2u;
                     xram0_struct_set(shield_cfg, vga_mode4_sprite_t, x_pos_px,
                                      (int16_t)((px - s_cam_x) - 8));
