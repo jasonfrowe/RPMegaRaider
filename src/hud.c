@@ -152,9 +152,9 @@ void hud_draw_title_screen(uint8_t vsync)
 void hud_draw_end_screen(uint8_t vsync, bool won)
 {
     if (won) {
-        hud_draw_text(9, 12, "Y O U   W I N !", 10); // bright green
+        hud_draw_text(12, 10, "Y O U   W I N !", 10); // bright green
     } else {
-        hud_draw_text(9, 10, "G A M E   O V E R", 9); // bright red
+        hud_draw_text(12, 10, "G A M E   O V E R", 9); // bright red
     }
 
     // Final score label
@@ -171,7 +171,7 @@ void hud_draw_end_screen(uint8_t vsync, bool won)
         buf[2] = (char)('0' + (v % 10)); v /= 10;
         buf[1] = (char)('0' + (v % 10)); v /= 10;
         buf[0] = (char)('0' + (v % 10));
-        hud_draw_text(15, 19, buf, 11); // bright cyan
+        hud_draw_text(17, 19, buf, 11); // bright cyan
     }
 
     // Flashing PRESS START
