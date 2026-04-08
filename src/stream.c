@@ -363,8 +363,12 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
                     s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
                     s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
                 }
+            } else {
+                // World boundary reached: Pad the ring buffer with empty space
+                for (uint16_t i = 0; i < RING_H; i++) s_fg_stage_col[i] = TILE_EMPTY;
+                s_fg_stage_col_idx = c; s_fg_stage_col_row0 = fg_target_top;
+                s_fg_stage_col_delta = 1; s_fg_stage_col_pending = true;
             }
-            // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_left > 0 && fg_tx < s_fg_loaded_left) {
             uint16_t c = s_fg_loaded_left - 1;
             if (read_col_data(s_fg_fd, c, fg_target_top, s_fg_stage_col, TILE_EMPTY)) {
@@ -384,8 +388,11 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
                     s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
                     s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
                 }
+            } else {
+                for (uint16_t i = 0; i < RING_H; i++) s_bg_stage_col[i] = TILE_EMPTY;
+                s_bg_stage_col_idx = c; s_bg_stage_col_row0 = bg_target_top;
+                s_bg_stage_col_delta = 1; s_bg_stage_col_pending = true;
             }
-            // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_left > 0 && bg_tx < s_bg_loaded_left) {
             uint16_t c = s_bg_loaded_left - 1;
             if (read_col_data(s_bg_fd, c, bg_target_top, s_bg_stage_col, TILE_EMPTY)) {
@@ -405,8 +412,11 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
                     s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
                     s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
                 }
+            } else {
+                for (uint16_t i = 0; i < RING_W; i++) s_fg_stage_row[i] = TILE_EMPTY;
+                s_fg_stage_row_idx = r; s_fg_stage_row_col0 = fg_target_left;
+                s_fg_stage_row_delta = 1; s_fg_stage_row_pending = true;
             }
-            // At boundary: don't advance tracking without data
         } else if (s_fg_loaded_top > 0 && fg_ty < s_fg_loaded_top) {
             uint16_t r = s_fg_loaded_top - 1;
             if (read_row_data(s_fg_row_fd, r, fg_target_left, s_fg_stage_row, TILE_EMPTY)) {
@@ -426,8 +436,11 @@ void stream_prefetch(int16_t cam_x_px, int16_t cam_y_px)
                     s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
                     s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
                 }
+            } else {
+                for (uint16_t i = 0; i < RING_W; i++) s_bg_stage_row[i] = TILE_EMPTY;
+                s_bg_stage_row_idx = r; s_bg_stage_row_col0 = bg_target_left;
+                s_bg_stage_row_delta = 1; s_bg_stage_row_pending = true;
             }
-            // At boundary: don't advance tracking without data
         } else if (s_bg_loaded_top > 0 && bg_ty < s_bg_loaded_top) {
             uint16_t r = s_bg_loaded_top - 1;
             if (read_row_data(s_bg_row_fd, r, bg_target_left, s_bg_stage_row, TILE_EMPTY)) {
