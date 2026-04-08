@@ -96,30 +96,6 @@ ZONE_DEEP_MIN  = 400   # rows >= 400: volcanic deep
 ZONE_MID_MIN   = 200   # rows >= 200: dungeon mid
                         # rows <  200: ancient upper
 
-# BG tile IDs — circuit board theme (match generate_bg_tiles.py)
-BG_SUBSTRATE     = 0
-BG_SUBSTRATE_ALT = 1
-BG_TRACE_H       = 2
-BG_TRACE_V       = 3
-BG_CORNER_A      = 4
-BG_CORNER_B      = 5
-BG_VIA           = 6
-BG_T_JUNC        = 7
-BG_IC_BODY       = 8
-BG_IC_PINS       = 9
-BG_PAD           = 10
-BG_CAPACITOR     = 11
-BG_LED_RED       = 12
-BG_LED_GREEN     = 13
-BG_TRACE_VIA     = 14
-BG_CROSS         = 15
-
-# Circuit board trace grid spacing
-BG_H_SPACING = 10   # H trace every 10 rows
-BG_V_SPACING = 8    # V trace every 8 cols
-BG_H_OFFSET  = 4    # first H trace row
-BG_V_OFFSET  = 3    # first V trace col
-
 # ---------------------------------------------------------------------------
 # RNG (same xorshift16 as maze.c for reproducibility)
 # ---------------------------------------------------------------------------
@@ -161,7 +137,7 @@ def fg_get(col, row):
 def bg_get(col, row):
     if 0 <= col < WORLD_W and 0 <= row < WORLD_H:
         return bg[col * WORLD_H + row]
-    return BG_SUBSTRATE
+    return 0
 
 def zone_platform_tile(row):
     """Return zone-appropriate platform-top FG tile for a given world row."""
@@ -207,31 +183,109 @@ def generate():
     seed_rng(0xBEEF)
 
     # ------------------------------------------------------------------
-    # 1. Background fill — circuit board PCB pattern.
+    # 1. Background Fill — Global Trace & Component PCB Pipeline
     # ------------------------------------------------------------------
-    # Lay down the trace grid: H traces every BG_H_SPACING rows,
-    # V traces every BG_V_SPACING cols. Intersections become BG_CROSS.
     for col in range(WORLD_W):
         for row in range(WORLD_H):
-            dr = (row - BG_H_OFFSET) % BG_H_SPACING
-            dc = (col - BG_V_OFFSET) % BG_V_SPACING
-            on_h = dr == 0 or dr == 1   # 2-pixel-wide H trace
-            on_v = dc == 0 or dc == 1   # 2-pixel-wide V trace
-            if on_h and on_v:
-                t = BG_CROSS
-            elif on_h:
-                t = BG_TRACE_H
-            elif on_v:
-                t = BG_TRACE_V
-            else:
-                # Alternate between substrate variants for faint texture
-                t = BG_SUBSTRATE_ALT if (col * 3 + row * 5) % 17 == 0 else BG_SUBSTRATE
-            bg_set(col, row, t)
+            bg_set(col, row, 1 if (col + row) % 2 == 0 else 0)
 
-    # Place vias at every other H/V intersection
-    for row in range(BG_H_OFFSET, WORLD_H, BG_H_SPACING * 2):
-        for col in range(BG_V_OFFSET, WORLD_W, BG_V_SPACING * 3):
-            bg_set(col, row, BG_VIA)
+    pins = []  # list of (x, y, dx, dy, color_base)
+
+    # Scatter CPUs
+    for _ in range(120):
+        w = 4 + rng_mod(4) * 2
+        h = 4 + rng_mod(4) * 2
+        cx = 10 + rng_mod(WORLD_W - 20 - w)
+        cy = 10 + rng_mod(WORLD_H - 20 - h)
+        
+        overlap = False
+        for x in range(cx - 1, cx + w + 1):
+            for y in range(cy - 1, cy + h + 1):
+                if bg_get(x, y) > 1:
+                    overlap = True
+                    break
+            if overlap: break
+        if overlap: continue
+
+        for x in range(cx, cx + w):
+            for y in range(cy, cy + h):
+                if x == cx and y == cy: t = 15
+                elif x == cx + w - 1 and y == cy: t = 16
+                elif x == cx and y == cy + h - 1: t = 17
+                elif x == cx + w - 1 and y == cy + h - 1: t = 18
+                elif y == cy: t = 11
+                elif y == cy + h - 1: t = 12
+                elif x == cx: t = 14
+                elif x == cx + w - 1: t = 13
+                else: t = 10
+                bg_set(x, y, t)
+                
+                # Spawn trace walkers from edges
+                if t in (11, 12, 13, 14) and rng_mod(3) == 0:
+                    cb = 2 if rng_mod(2) == 0 else 6
+                    if t == 11: pins.append((x, y - 1, 1 if rng_mod(2) == 0 else -1, -1, cb))
+                    elif t == 12: pins.append((x, y + 1, 1 if rng_mod(2) == 0 else -1, 1, cb))
+                    elif t == 14: pins.append((x - 1, y, -1, 1 if rng_mod(2) == 0 else -1, cb))
+                    elif t == 13: pins.append((x + 1, y, 1, 1 if rng_mod(2) == 0 else -1, cb))
+
+    # Scatter Resistor Arrays
+    for _ in range(400):
+        is_horiz = rng_mod(2) == 0
+        w, h = (3, 1) if is_horiz else (1, 3)
+        cx = 10 + rng_mod(WORLD_W - 20 - w)
+        cy = 10 + rng_mod(WORLD_H - 20 - h)
+        
+        overlap = False
+        for x in range(cx - 1, cx + w + 1):
+            for y in range(cy - 1, cy + h + 1):
+                if bg_get(x, y) > 1:
+                    overlap = True
+                    break
+            if overlap: break
+        if overlap: continue
+
+        cb = 2 if rng_mod(2) == 0 else 6
+        for x in range(cx, cx + w):
+            for y in range(cy, cy + h):
+                bg_set(x, y, 19 if is_horiz else 20)
+                if is_horiz:
+                    if x == cx: pins.append((x - 1, y, -1, 1 if rng_mod(2) == 0 else -1, cb))
+                    if x == cx + w - 1: pins.append((x + 1, y, 1, 1 if rng_mod(2) == 0 else -1, cb))
+                else:
+                    if y == cy: pins.append((x, y - 1, 1 if rng_mod(2) == 0 else -1, -1, cb))
+                    if y == cy + h - 1: pins.append((x, y + 1, 1 if rng_mod(2) == 0 else -1, 1, cb))
+
+    # Route Diagonal Traces
+    for (sx, sy, dx, dy, cb) in pins:
+        if bg_get(sx, sy) > 1: continue
+        
+        bg_set(sx, sy, cb + 3) # Starting VIA docks to Orthogonal Pin
+        x, y = sx + dx, sy + dy
+        length = 5 + rng_mod(30)
+        
+        for step in range(length):
+            if not (0 <= x < WORLD_W and 0 <= y < WORLD_H): break
+            
+            curr = bg_get(x, y)
+            if curr > 1:
+                # Collision: form intersection if crossing another trace
+                bg_set(x, y, (cb + 2) if curr in (2, 3, 6, 7) else (cb + 3))
+                break
+            
+            bg_set(x, y, cb if dx == dy else cb + 1)
+            
+            # Random 45-degree turns using a routing VIA
+            if step > 2 and rng_mod(8) == 0:
+                bg_set(x, y, cb + 3)
+                if rng_mod(2) == 0: dx = -dx
+                else: dy = -dy
+            
+            x += dx; y += dy
+        
+        # Terminate line safely
+        if 0 <= x < WORLD_W and 0 <= y < WORLD_H:
+            if bg_get(x, y) <= 1:
+                bg_set(x, y, cb + 3)
 
     # ------------------------------------------------------------------
     # 2. Floor rows: evenly spaced with random offset, bottom up.
@@ -299,13 +353,6 @@ def generate():
             in_gap = any(gs <= col < ge for gs, ge in gaps_placed)
             if not in_gap:
                 fg_set(col, r, platform_tile)
-
-        # Occasionally add a component pad below floor lines
-        for col in range(BORDER_COLS + 4, WORLD_W - BORDER_COLS - 4, 13 + rng_mod(9)):
-            in_gap = any(gs <= col < ge for gs, ge in gaps_placed)
-            if not in_gap and fg_get(col, r + 1) == TILE_EMPTY:
-                if bg_get(col, r + 1) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT):
-                    bg_set(col, r + 1, BG_PAD)
 
     # ------------------------------------------------------------------
     # 6. Ladder shafts connecting adjacent floor pairs.
@@ -452,42 +499,6 @@ def generate():
         for (c, r) in last:
             fg_set(c, r, TILE_EMPTY)
         reachable = flood_fill(PLAYER_START_COL, start_air_row)
-
-    # ------------------------------------------------------------------
-    # 9. BG circuit board components — ICs, LEDs, capacitors.
-    # ------------------------------------------------------------------
-    seed_rng(0xCAFE)   # fresh seed for component placement
-
-    # IC blocks: 2×1 tiles (body + pins)
-    for _ in range(300):
-        col = BORDER_COLS + 1 + rng_mod(WORLD_W - 2 * BORDER_COLS - 3)
-        row = 2 + rng_mod(WORLD_H - 4)
-        if fg_get(col, row) != TILE_EMPTY or fg_get(col + 1, row) != TILE_EMPTY:
-            continue
-        if (bg_get(col, row) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT) and
-                bg_get(col + 1, row) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT)):
-            bg_set(col,     row, BG_IC_BODY)
-            bg_set(col + 1, row, BG_IC_PINS)
-
-    # LEDs and capacitors at substrate tiles
-    for _ in range(600):
-        col = BORDER_COLS + rng_mod(WORLD_W - 2 * BORDER_COLS)
-        row = 2 + rng_mod(WORLD_H - 4)
-        if fg_get(col, row) != TILE_EMPTY:
-            continue
-        if bg_get(col, row) in (BG_SUBSTRATE, BG_SUBSTRATE_ALT):
-            c = rng_mod(3)
-            bg_set(col, row, (BG_LED_RED, BG_LED_GREEN, BG_CAPACITOR)[c])
-
-    # T-junctions on H-traces near floors (circuit routing feel)
-    for f in range(1, NUM_FLOORS):
-        r = floor_row[f]
-        if r < 3:
-            continue
-        for col in range(BORDER_COLS + 6, WORLD_W - BORDER_COLS - 6, 16 + rng_mod(12)):
-            if (fg_get(col, r + 2) == TILE_EMPTY and
-                    bg_get(col, r + 2) == BG_TRACE_H):
-                bg_set(col, r + 2, BG_T_JUNC)
 
     # ------------------------------------------------------------------
     # 10. Pickup and spawn placement.

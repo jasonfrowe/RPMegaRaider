@@ -1,306 +1,254 @@
 #!/usr/bin/env python3
 """
-generate_bg_tiles.py — Circuit board BG tileset for RPMegaRaider.
+generate_bg_tiles.py — Diagonal Circuit Board components.
 
-Tile index layout (matched to generate_maze.py BG_ constants):
-  0   BG_SUBSTRATE      — dark PCB background
-  1   BG_SUBSTRATE_ALT  — substrate with faint texture
-  2   BG_TRACE_H        — horizontal gold trace
-  3   BG_TRACE_V        — vertical gold trace
-  4   BG_CORNER_A       — trace corner (right+up)
-  5   BG_CORNER_B       — trace corner (left+up)
-  6   BG_VIA            — solder via / pad
-  7   BG_T_JUNC         — T-junction (H + V stub down)
-  8   BG_IC_BODY        — IC chip body
-  9   BG_IC_PINS        — IC chip with pin stubs
-  10  BG_PAD            — small copper pad
-  11  BG_CAPACITOR      — capacitor (blue body)
-  12  BG_LED_RED        — red LED indicator
-  13  BG_LED_GREEN      — green LED indicator
-  14  BG_TRACE_VIA      — H trace with centre via blob
-  15  BG_CROSS          — cross junction (H+V, bright centre)
-
-Outputs:
-  BG_TILES.BIN  256 tiles × 32 bytes = 8192 bytes
-  BG_PAL.BIN    16 colors × 2 bytes  = 32 bytes  (RGB555 LE)
+Provides the 45-degree trace components, vias, and orthogonal IC chips
+used by generate_maze.py to route the global circuit board pattern.
 """
 
-import struct, os
+import struct
+import os
 
 def rgb555(r8, g8, b8):
     """Opaque color: bits [15:11]=B, [10:6]=G, [5]=alpha(1=opaque), [4:0]=R."""
     r = (r8 >> 3) & 0x1F
     g = (g8 >> 3) & 0x1F
     b = (b8 >> 3) & 0x1F
-    return (b << 11) | (g << 6) | (1 << 5) | r   # alpha bit always set (BG is never transparent)
+    return (b << 11) | (g << 6) | (1 << 5) | r
 
-# ---------------------------------------------------------------------------
-# BG Palette  — circuit board / PCB theme
-# ---------------------------------------------------------------------------
 PALETTE = [
-    rgb555(  6,  12,   6),   # 0  deep PCB black-green (darkest)
-    rgb555( 12,  22,  10),   # 1  dark PCB substrate
-    rgb555( 20,  35,  15),   # 2  mid substrate
-    rgb555( 30,  52,  22),   # 3  lighter substrate area
-    rgb555( 18,  78, 120),   # 4  dark cyan trace edge
-    rgb555( 36, 155, 210),   # 5  cyan trace main
-    rgb555(110, 230, 255),   # 6  bright cyan highlight
-    rgb555( 18,  92,  42),   # 7  deep green pad dark
-    rgb555( 72, 182, 118),   # 8  bright green pad light
-    rgb555( 18,  18,  32),   # 9  IC chip body dark
-    rgb555( 32,  32,  58),   # 10 IC chip body mid
-    rgb555( 65,  65,  95),   # 11 IC chip highlight
-    rgb555(200,  28,  28),   # 12 red LED / power indicator
-    rgb555( 28, 195,  75),   # 13 green LED / status indicator
-    rgb555( 28,  75, 215),   # 14 blue capacitor / trace
-    rgb555(220, 220, 232),   # 15 white silkscreen
+    rgb555(  0,   0,   0),   # 0  Void Black
+    rgb555(  5,   5,  10),   # 1  Deep Substrate Texture
+    rgb555(  0,  30,  50),   # 2  Dim Cyan Edge
+    rgb555(  0,  80, 120),   # 3  Mid Cyan Line
+    rgb555( 40,   0,  50),   # 4  Dim Magenta Edge
+    rgb555(100,   0, 120),   # 5  Mid Magenta Line
+    rgb555( 10,  10,  15),   # 6  IC Body
+    rgb555( 40,  40,  50),   # 7  IC Edge/Highlight
+    rgb555(200, 200, 200),   # 8  Silver Pin / Via Core
+    rgb555( 20,  30,  50),   # 9  Resistor Body
+    rgb555( 50,  80, 120),   # 10 Resistor Band 1
+    rgb555(180,  50,  50),   # 11 Resistor Band 2
+    rgb555(200, 150,   0),   # 12 Gold Detail
 ]
+# Pad to 16 colors
+while len(PALETTE) < 16:
+    PALETTE.append(rgb555(0, 0, 0))
 
-assert len(PALETTE) == 16
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def make_tile(rows):
-    assert len(rows) == 8
     data = bytearray()
     for row in rows:
-        assert len(row) == 8
         for i in range(0, 8, 2):
             byte = ((row[i] & 0xF) << 4) | (row[i+1] & 0xF)
             data.append(byte)
     return bytes(data)
 
-def solid_tile(c):
-    return make_tile([[c]*8]*8)
+def solid_tile(c): return make_tile([[c]*8]*8)
 
-# Trace occupies rows 3-4 (H) or cols 3-4 (V), 2 pixels wide
-# Palette: 1=substrate, 4=trace edge (dark gold), 5=trace main, 6=bright
-
-def bg_substrate():
-    """Plain PCB substrate background."""
-    return solid_tile(1)
-
-def bg_substrate_alt():
-    """Substrate with faint via dots."""
+def bg_dots():
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,2,1,1,1,2,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,2,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,2,1,1,1,1,1,2],
-        [1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,1,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
     ])
 
-def bg_trace_h():
-    """Horizontal gold trace through tile centre (rows 3-4)."""
+def bg_trace_se(E, M):
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [4,5,5,5,5,5,5,4],
-        [4,5,5,5,5,5,5,4],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
+        [M,E,0,0,0,0,0,0],
+        [M,M,E,0,0,0,0,0],
+        [E,M,M,E,0,0,0,0],
+        [0,E,M,M,E,0,0,0],
+        [0,0,E,M,M,E,0,0],
+        [0,0,0,E,M,M,E,0],
+        [0,0,0,0,E,M,M,E],
+        [0,0,0,0,0,E,M,M],
     ])
 
-def bg_trace_v():
-    """Vertical gold trace through tile centre (cols 3-4)."""
+def bg_trace_sw(E, M):
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,4,4,1,1,1],
+        [0,0,0,0,0,0,E,M],
+        [0,0,0,0,0,E,M,M],
+        [0,0,0,0,E,M,M,E],
+        [0,0,0,E,M,M,E,0],
+        [0,0,E,M,M,E,0,0],
+        [0,E,M,M,E,0,0,0],
+        [E,M,M,E,0,0,0,0],
+        [M,M,E,0,0,0,0,0],
     ])
 
-def bg_corner_a():
-    """Corner: V trace from top bends right (SE turn)."""
+def bg_cross(E, M):
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,5,5,4],
-        [1,1,1,4,5,5,5,4],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
+        [M,E,0,0,0,0,E,M],
+        [M,M,E,0,0,E,M,M],
+        [E,M,M,E,E,M,M,E],
+        [0,E,M,8,8,M,E,0],
+        [0,0,E,8,8,E,0,0],
+        [0,E,M,8,8,M,E,0],
+        [E,M,M,E,E,M,M,E],
+        [M,M,E,0,0,E,M,M],
     ])
 
-def bg_corner_b():
-    """Corner: V trace from top bends left (SW turn)."""
+def bg_via(E, M):
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [4,5,5,5,5,1,1,1],
-        [4,5,5,5,4,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
+        [0,0,0,8,8,0,0,0],
+        [0,E,M,8,8,M,E,0],
+        [0,M,8,8,8,8,M,0],
+        [8,8,8,0,0,8,8,8],
+        [8,8,8,0,0,8,8,8],
+        [0,M,8,8,8,8,M,0],
+        [0,E,M,8,8,M,E,0],
+        [0,0,0,8,8,0,0,0],
     ])
 
-def bg_via():
-    """Solder via — copper ring with drill hole."""
+def bg_ic_edge_n():
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,1,4,5,5,4,1,1],
-        [1,4,5,7,7,5,4,1],
-        [1,5,7,0,0,7,5,1],
-        [1,5,7,0,0,7,5,1],
-        [1,4,5,7,7,5,4,1],
-        [1,1,4,5,5,4,1,1],
-        [1,1,1,1,1,1,1,1],
+        [0,0,0,8,8,0,0,0],
+        [0,0,0,8,8,0,0,0],
+        [0,0,0,8,8,0,0,0],
+        [7,7,7,8,8,7,7,7],
+        [6,6,6,6,6,6,6,6],
+        [6,6,6,6,6,6,6,6],
+        [6,6,6,6,6,6,6,6],
+        [6,6,6,6,6,6,6,6],
     ])
 
-def bg_t_junc():
-    """T-junction: H trace + V trace going downward."""
+def bg_ic_edge_s():
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [4,5,5,5,5,5,5,4],
-        [4,5,5,5,5,5,5,4],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,4,4,1,1,1],
+        [6,6,6,6,6,6,6,6],
+        [6,6,6,6,6,6,6,6],
+        [6,6,6,6,6,6,6,6],
+        [6,6,6,6,6,6,6,6],
+        [7,7,7,8,8,7,7,7],
+        [0,0,0,8,8,0,0,0],
+        [0,0,0,8,8,0,0,0],
+        [0,0,0,8,8,0,0,0],
     ])
 
-def bg_ic_body():
-    """IC chip interior body."""
+def bg_ic_edge_e():
     return make_tile([
-        [9,9,9,9,9,9,9,9],
-        [9,10,10,10,10,10,10,9],
-        [9,10,10,10,10,10,10,9],
-        [9,10,11,11,11,11,10,9],
-        [9,10,11,11,11,11,10,9],
-        [9,10,10,10,10,10,10,9],
-        [9,10,10,10,10,10,10,9],
-        [9,9,9,9,9,9,9,9],
+        [6,6,6,6,7,0,0,0],
+        [6,6,6,6,7,0,0,0],
+        [6,6,6,6,7,0,0,0],
+        [6,6,6,6,8,8,8,8],
+        [6,6,6,6,8,8,8,8],
+        [6,6,6,6,7,0,0,0],
+        [6,6,6,6,7,0,0,0],
+        [6,6,6,6,7,0,0,0],
     ])
 
-def bg_ic_pins():
-    """IC chip with gold pin stubs on left side."""
+def bg_ic_edge_w():
     return make_tile([
-        [1,9,9,9,9,9,9,9],
-        [5,9,10,10,10,10,10,9],
-        [1,9,10,11,11,11,10,9],
-        [5,9,10,11,9,11,10,9],
-        [5,9,10,11,9,11,10,9],
-        [1,9,10,11,11,11,10,9],
-        [5,9,10,10,10,10,10,9],
-        [1,9,9,9,9,9,9,9],
+        [0,0,0,7,6,6,6,6],
+        [0,0,0,7,6,6,6,6],
+        [0,0,0,7,6,6,6,6],
+        [8,8,8,8,6,6,6,6],
+        [8,8,8,8,6,6,6,6],
+        [0,0,0,7,6,6,6,6],
+        [0,0,0,7,6,6,6,6],
+        [0,0,0,7,6,6,6,6],
     ])
 
-def bg_pad():
-    """Small square copper component pad."""
+def bg_ic_corner_nw():
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,4,4,4,4,4,4,1],
-        [1,4,5,5,5,5,4,1],
-        [1,4,5,6,6,5,4,1],
-        [1,4,5,6,6,5,4,1],
-        [1,4,5,5,5,5,4,1],
-        [1,4,4,4,4,4,1,1],
-        [1,1,1,1,1,1,1,1],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,7,7,7,7],
+        [0,0,0,7,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
     ])
 
-def bg_capacitor():
-    """Capacitor — blue cylindrical body with gold leads."""
+def bg_ic_corner_ne():
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,14,14,14,14,14,14,1],
-        [1,14,15,14,14,15,14,1],
-        [1,14,14,14,14,14,14,1],
-        [1,14,14,14,14,14,14,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,4,4,1,1,1],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [7,7,7,7,0,0,0,0],
+        [6,6,6,6,7,0,0,0],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,6,7,0,0],
     ])
 
-def bg_led_red():
-    """Red LED indicator with gold leads."""
+def bg_ic_corner_sw():
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,12,12,12,12,1,1],
-        [1,12,12,12,12,12,12,1],
-        [1,12,12,12,12,12,12,1],
-        [1,1,12,12,12,12,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,4,4,1,1,1],
+        [0,0,7,6,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
+        [0,0,7,6,6,6,6,6],
+        [0,0,0,7,6,6,6,6],
+        [0,0,0,0,7,7,7,7],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
     ])
 
-def bg_led_green():
-    """Green LED indicator with gold leads."""
+def bg_ic_corner_se():
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,13,13,13,13,1,1],
-        [1,13,13,13,13,13,13,1],
-        [1,13,13,13,13,13,13,1],
-        [1,1,13,13,13,13,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,4,4,1,1,1],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,6,7,0,0],
+        [6,6,6,6,7,0,0,0],
+        [7,7,7,7,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
     ])
 
-def bg_trace_via():
-    """H trace with solder blob at centre."""
+def bg_res_h():
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,7,7,1,1,1],
-        [4,5,5,8,8,5,5,4],
-        [4,5,5,8,8,5,5,4],
-        [1,1,1,7,7,1,1,1],
-        [1,1,1,1,1,1,1,1],
-        [1,1,1,1,1,1,1,1],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [8,8,9,10,11,9,8,8],
+        [8,8,9,10,11,9,8,8],
+        [8,8,9,10,11,9,8,8],
+        [8,8,9,10,11,9,8,8],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
     ])
 
-def bg_cross():
-    """Cross junction — H and V traces, bright solder at centre."""
+def bg_res_v():
     return make_tile([
-        [1,1,1,4,4,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [4,5,5,6,6,5,5,4],
-        [4,5,5,6,6,5,5,4],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,5,5,1,1,1],
-        [1,1,1,4,4,1,1,1],
+        [0,0,8,8,8,8,0,0],
+        [0,0,8,8,8,8,0,0],
+        [0,0,9,9,9,9,0,0],
+        [0,0,10,10,10,10,0,0],
+        [0,0,11,11,11,11,0,0],
+        [0,0,9,9,9,9,0,0],
+        [0,0,8,8,8,8,0,0],
+        [0,0,8,8,8,8,0,0],
     ])
 
-# ---------------------------------------------------------------------------
-# Build the 256-tile array
-# ---------------------------------------------------------------------------
-tiles = [solid_tile(0)] * 256   # default: deep PCB void
+tiles = [solid_tile(0)] * 256
+tiles[1]  = bg_dots()
+tiles[2]  = bg_trace_se(2, 3)
+tiles[3]  = bg_trace_sw(2, 3)
+tiles[4]  = bg_cross(2, 3)
+tiles[5]  = bg_via(2, 3)
+tiles[6]  = bg_trace_se(4, 5)
+tiles[7]  = bg_trace_sw(4, 5)
+tiles[8]  = bg_cross(4, 5)
+tiles[9]  = bg_via(4, 5)
 
-tiles[0]  = bg_substrate()
-tiles[1]  = bg_substrate_alt()
-tiles[2]  = bg_trace_h()
-tiles[3]  = bg_trace_v()
-tiles[4]  = bg_corner_a()
-tiles[5]  = bg_corner_b()
-tiles[6]  = bg_via()
-tiles[7]  = bg_t_junc()
-tiles[8]  = bg_ic_body()
-tiles[9]  = bg_ic_pins()
-tiles[10] = bg_pad()
-tiles[11] = bg_capacitor()
-tiles[12] = bg_led_red()
-tiles[13] = bg_led_green()
-tiles[14] = bg_trace_via()
-tiles[15] = bg_cross()
+tiles[10] = solid_tile(6)
+tiles[11] = bg_ic_edge_n()
+tiles[12] = bg_ic_edge_s()
+tiles[13] = bg_ic_edge_e()
+tiles[14] = bg_ic_edge_w()
+tiles[15] = bg_ic_corner_nw()
+tiles[16] = bg_ic_corner_ne()
+tiles[17] = bg_ic_corner_sw()
+tiles[18] = bg_ic_corner_se()
 
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
+tiles[19] = bg_res_h()
+tiles[20] = bg_res_v()
+
 out_dir = os.path.dirname(__file__) or '.'
 out_root = os.path.join(out_dir, '..', 'images')
 os.makedirs(out_root, exist_ok=True)
