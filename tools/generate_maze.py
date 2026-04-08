@@ -110,7 +110,7 @@ def rng_next():
     s ^= (s >> 9) & 0xFFFF
     s ^= (s << 8) & 0xFFFF
     _rng[0] = s & 0xFFFF
-    return _rng[0] & 0xFF
+    return _rng[0]
 
 def rng_mod(n):
     return 0 if n <= 1 else rng_next() % n
@@ -192,7 +192,7 @@ def generate():
     pins = []  # list of (x, y, dx, dy, color_base)
 
     # Scatter CPUs
-    for _ in range(120):
+    for _ in range(800):
         w = 4 + rng_mod(4) * 2
         h = 4 + rng_mod(4) * 2
         cx = 10 + rng_mod(WORLD_W - 20 - w)
@@ -229,7 +229,7 @@ def generate():
                     elif t == 13: pins.append((x + 1, y, 1, 1 if rng_mod(2) == 0 else -1, cb))
 
     # Scatter Resistor Arrays
-    for _ in range(400):
+    for _ in range(2500):
         is_horiz = rng_mod(2) == 0
         w, h = (3, 1) if is_horiz else (1, 3)
         cx = 10 + rng_mod(WORLD_W - 20 - w)
