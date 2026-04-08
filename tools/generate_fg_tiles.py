@@ -4,9 +4,9 @@ generate_fg_tiles.py — FG tileset for RPMegaRaider.
 
 Tile organisation (zone matched to generate_maze.py):
   0        — transparent (empty air)
-  1-10     — DEEP  zone (world rows 400-600): volcanic basalt, dark rock
-  11-20    — MID   zone (world rows 200-400): dungeon brick / standard stone
-  21-30    — UPPER zone (world rows   0-200): ancient carved stone + crystal
+  1-10     — DEEP  zone (world rows 400-600): Classic Brick
+  11-20    — MID   zone (world rows 200-400): Classic Brick
+  21-30    — UPPER zone (world rows   0-200): Classic Brick
   107-110  — Ladder tiles (all zones)
 """
 
@@ -22,22 +22,22 @@ def rgb555(r8, g8, b8):
 TRANSPARENT = 0  # alpha=0, all channels 0 — transparent black for FG index 0
 
 PALETTE = [
-    TRANSPARENT,             # 0  transparent (FG only: shows BG through)
-    rgb555( 15,  15,  20),   # 1  basalt black / deepest shadow
-    rgb555( 50,  48,  55),   # 2  dark rock gray
-    rgb555( 95,  92, 100),   # 3  medium rock
-    rgb555(150, 148, 158),   # 4  light stone
-    rgb555(215, 213, 220),   # 5  bright highlight
-    rgb555( 45,  30,  18),   # 6  dark earth
-    rgb555(120,  88,  55),   # 7  warm stone
-    rgb555(165, 132,  90),   # 8  ladder wood / sand
-    rgb555(100,  55,  15),   # 9  dark copper ore
-    rgb555(185,  95,  35),   # 10 bright copper
-    rgb555( 30,  90,  30),   # 11 deep moss
-    rgb555(180,  45,  30),   # 12 volcanic red / lava crack
-    rgb555( 40, 100, 175),   # 13 crystal blue
-    rgb555(140, 190, 240),   # 14 ice blue highlight
-    rgb555(255, 240, 160),   # 15 warm gold highlight
+    TRANSPARENT,             # 0  Transparent
+    rgb555(  0,   0,   0),   # 1  Pitch Black / Mortar
+    rgb555( 90,  30,  30),   # 2  Dark Red Brick
+    rgb555(180,  50,  40),   # 3  Mid Red Brick
+    rgb555(255, 255, 255),   # 4  Pure White (Intense Core)
+    rgb555(  0,  60,  80),   # 5  Dim Cyan
+    rgb555(  0, 200, 255),   # 6  Bright Cyan
+    rgb555( 80,  20,   0),   # 7  Dim Orange
+    rgb555(255, 100,   0),   # 8  Bright Orange
+    rgb555( 60,   0,  60),   # 9  Dim Magenta
+    rgb555(255,   0, 255),   # 10 Bright Magenta
+    rgb555(100,  55,  15),   # 11 Dark Wood (Ladder)
+    rgb555(165, 132,  90),   # 12 Light Wood (Ladder)
+    rgb555(255, 220,   0),   # 13 Gold / Yellow
+    rgb555(255,  20,  50),   # 14 Bright Red
+    rgb555( 10,  20,  60),   # 15 Dark Blue
 ]
 assert len(PALETTE) == 16
 
@@ -54,414 +54,47 @@ def make_tile(rows):
 def solid_tile(c):
     return make_tile([[c]*8]*8)
 
-T = 0   # transparent
-W = 5   # bright highlight (white)
-Y = 15  # warm gold (yellow)
-H = 13  # crystal blue (highlight)
-G = 11  # deep moss (green)
-B = 14  # ice blue
-R = 12  # volcanic red
-
 # =============================================================================
-# DEEP ZONE tiles 1-10  —  volcanic basalt, dark rock
+# CLASSIC BRICK PATTERNS
 # =============================================================================
 
-def deep_basalt():
-    """Rough basalt block — main deep wall tile."""
+def t_solid():
+    H = 13; M = 3; D = 2; K = 1
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,3,2,2,2,2,1],
-        [1,2,2,2,3,2,2,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,3,2,2,2,3,1],
-        [1,2,2,2,2,2,1,1],
-        [1,1,1,1,1,1,1,1],
+        [H, H, H, H, H, H, H, K],
+        [M, M, M, M, M, M, M, K],
+        [M, M, M, M, M, M, M, K],
+        [K, K, K, K, K, K, K, K],
+        [H, H, H, K, H, H, H, H],
+        [M, M, M, K, M, M, M, M],
+        [M, M, M, K, M, M, M, M],
+        [K, K, K, K, K, K, K, K],
     ])
 
-def deep_basalt_cracked():
-    """Basalt with a diagonal crack."""
+def t_platform():
+    H = 13; M = 3; D = 2; K = 1
     return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,2,2,1,2,2,2,1],
-        [1,2,1,2,2,2,2,1],
-        [1,2,2,2,1,2,2,1],
-        [1,2,2,2,2,1,2,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,2,2,2,2,1,1],
-        [1,1,1,1,1,1,1,1],
+        [H, H, H, H, H, H, H, H],
+        [H, H, H, H, H, H, H, H],
+        [K, K, K, K, K, K, K, K],
+        [H, H, H, K, H, H, H, H],
+        [M, M, M, K, M, M, M, M],
+        [M, M, M, K, M, M, M, M],
+        [D, D, D, K, D, D, D, D],
+        [K, K, K, K, K, K, K, K],
     ])
 
-def deep_platform_top():
-    """Dark platform — single row top highlight."""
+def t_fill():
+    M = 3; D = 2; K = 1
     return make_tile([
-        [3,3,3,3,3,3,3,3],
-        [1,2,2,2,2,2,2,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,2,2,2,2,2,1],
-        [1,1,2,2,2,2,1,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,2,2,2,2,1,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-def deep_fill_a():
-    """Ground fill — deep zone."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,1,2,2,2,2,1,2],
-        [2,2,2,2,2,2,2,2],
-        [2,2,2,1,2,2,2,2],
-        [2,2,2,2,2,1,2,2],
-        [2,1,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,1],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def deep_volcanic():
-    """Basalt with lava crack veins."""
-    return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,12,12,2,2,2,1],
-        [1,2,2,12,2,2,2,1],
-        [1,2,2,2,12,12,2,1],
-        [1,2,2,2,2,2,2,1],
-        [1,2,2,2,2,2,1,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-def deep_ore_vein():
-    """Rock with copper ore veins."""
-    return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,2,2,10,2,2,2,1],
-        [1,2,2,2,10,2,2,1],
-        [1,2,9,2,2,2,2,1],
-        [1,2,2,2,2,10,2,1],
-        [1,2,2,10,2,2,2,1],
-        [1,2,2,2,2,2,1,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-def deep_dense_basalt():
-    """Dense dark basalt, subtle texture."""
-    return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [1,1,2,1,1,2,1,1],
-        [1,2,2,2,2,2,2,1],
-        [1,1,2,2,2,2,1,1],
-        [1,2,2,2,2,2,2,1],
-        [1,1,2,1,2,2,1,1],
-        [1,2,2,2,2,2,2,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-def deep_fill_strata():
-    """Fill with horizontal rock strata lines."""
-    return make_tile([
-        [1,1,1,1,1,1,1,1],
-        [2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2],
-        [1,1,1,1,1,1,1,1],
-        [2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2],
-        [1,1,1,1,1,1,1,1],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def deep_lava_fill():
-    """Fill with scattered lava glow."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,2,2,1,2,2,2,2],
-        [2,1,2,2,2,2,1,2],
-        [2,2,2,2,12,2,2,2],
-        [2,2,12,2,2,2,2,2],
-        [2,2,2,2,2,2,1,2],
-        [2,12,2,2,2,2,2,2],
-        [2,2,2,2,2,12,2,2],
-    ])
-
-def deep_half_platform():
-    """Half-height platform — deep zone."""
-    return make_tile([
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [3,3,3,3,3,3,3,3],
-        [1,2,2,2,2,2,2,1],
-        [1,2,2,2,2,2,2,1],
-        [1,1,1,1,1,1,1,1],
-    ])
-
-# =============================================================================
-# MID ZONE tiles 11-20  —  dungeon brick / standard stone
-# =============================================================================
-
-def mid_brick_a():
-    """Standard dungeon brick with mortar lines."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,4,3,3,3,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-        [2,3,3,3,4,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def mid_brick_cracked():
-    """Brick with a vertical crack."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,4,3,2,3,3,3,2],
-        [2,3,3,2,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-        [2,3,3,3,2,3,3,2],
-        [2,3,3,3,2,3,4,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def mid_platform_top():
-    """Platform top — mid zone, bevelled edge."""
-    return make_tile([
-        [4,4,4,4,4,4,4,4],
-        [2,4,3,3,3,3,4,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-        [2,3,3,3,4,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def mid_fill_a():
-    """Standard fill — mid zone."""
-    return make_tile([
-        [3,3,3,3,3,3,3,3],
-        [3,3,3,3,3,3,3,3],
-        [3,2,3,3,3,2,3,3],
-        [3,3,3,3,3,3,3,3],
-        [3,3,3,2,3,3,3,3],
-        [3,3,3,3,3,3,2,3],
-        [3,3,2,3,3,3,3,3],
-        [3,3,3,3,3,2,3,3],
-    ])
-
-def mid_mossy_brick():
-    """Brick with moss patches."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,11,11,3,3,3,3,2],
-        [2,11,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-        [2,3,3,3,3,11,11,2],
-        [2,3,3,3,3,11,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def mid_carved():
-    """Bevelled carved block."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,5,4,4,4,4,3,2],
-        [2,4,3,3,3,3,3,2],
-        [2,4,3,3,3,3,3,2],
-        [2,4,3,3,3,3,3,2],
-        [2,4,3,3,3,3,3,2],
-        [2,3,3,3,3,3,2,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def mid_platform_mossy():
-    """Mossy platform top — mid zone."""
-    return make_tile([
-        [11,4,11,4,11,4,11,4],
-        [2,11,3,3,3,3,11,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-        [2,3,3,3,4,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def mid_fill_b():
-    """Fill with offset mortar grid."""
-    return make_tile([
-        [3,2,3,3,2,3,3,2],
-        [3,3,3,3,3,3,3,3],
-        [2,3,3,2,3,3,2,3],
-        [3,3,3,3,3,3,3,3],
-        [3,2,3,3,2,3,3,2],
-        [3,3,3,3,3,3,3,3],
-        [2,3,3,2,3,3,2,3],
-        [3,3,3,3,3,3,3,3],
-    ])
-
-def mid_fill_c():
-    """Fill with horizontal strata highlight."""
-    return make_tile([
-        [3,3,3,3,3,3,3,3],
-        [3,3,3,3,3,3,3,3],
-        [2,2,2,2,2,2,2,2],
-        [3,4,3,3,3,3,4,3],
-        [3,3,3,3,3,3,3,3],
-        [3,3,3,3,3,3,3,3],
-        [2,2,2,2,2,2,2,2],
-        [3,3,3,3,3,3,3,3],
-    ])
-
-def mid_half_platform():
-    """Half-height platform — mid zone."""
-    return make_tile([
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [5,4,5,4,5,4,5,4],
-        [2,4,3,3,3,3,4,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-# =============================================================================
-# UPPER ZONE tiles 21-30  —  ancient carved stone + crystal
-# =============================================================================
-
-def upper_carved_a():
-    """Ancient carved stone, fine chisel work."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,5,4,4,4,4,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,14,3,3,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,4,3,3,3,4,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def upper_crystal_vein():
-    """Stone with blue crystal veins."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,4,4,13,4,4,4,2],
-        [2,4,3,3,13,3,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,3,3,13,4,2],
-        [2,4,13,3,3,3,4,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def upper_platform_top():
-    """Ancient platform — crystal-edged top."""
-    return make_tile([
-        [14,13,14,13,14,13,14,13],
-        [2,5,4,4,4,4,5,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,3,3,3,3,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def upper_fill_a():
-    """Light fill — upper zone."""
-    return make_tile([
-        [4,4,4,4,4,4,4,4],
-        [4,4,4,4,4,4,4,4],
-        [4,3,4,4,4,3,4,4],
-        [4,4,4,4,4,4,4,4],
-        [4,4,4,3,4,4,4,4],
-        [4,4,4,4,4,4,3,4],
-        [4,3,4,4,4,4,4,4],
-        [4,4,4,4,4,3,4,4],
-    ])
-
-def upper_crystal_cluster():
-    """Crystal cluster embedded in stone face."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,4,4,4,4,4,4,2],
-        [2,4,14,13,14,3,4,2],
-        [2,4,13,14,13,3,4,2],
-        [2,4,14,13,14,3,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,3,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def upper_ornate():
-    """Ornate inlaid block."""
-    return make_tile([
-        [2,2,2,2,2,2,2,2],
-        [2,5,5,5,5,5,5,2],
-        [2,5,4,4,4,4,5,2],
-        [2,5,4,3,3,4,5,2],
-        [2,5,4,3,3,4,5,2],
-        [2,5,4,4,4,4,5,2],
-        [2,5,5,5,5,5,5,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def upper_platform_alt():
-    """Ancient platform variant — full border."""
-    return make_tile([
-        [5,5,5,5,5,5,5,5],
-        [2,5,4,4,4,4,5,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,3,3,3,4,2],
-        [2,2,2,2,2,2,2,2],
-        [2,4,3,3,3,3,4,2],
-        [2,4,3,3,3,3,3,2],
-        [2,2,2,2,2,2,2,2],
-    ])
-
-def upper_fill_b():
-    """Light stone fill with bright specks."""
-    return make_tile([
-        [4,4,4,4,4,4,4,4],
-        [4,4,4,4,4,4,4,4],
-        [4,5,4,4,4,5,4,4],
-        [4,4,4,4,4,4,4,4],
-        [4,4,4,4,4,4,4,4],
-        [4,5,4,4,4,4,4,5],
-        [4,4,4,4,4,4,4,4],
-        [4,4,4,4,5,4,4,4],
-    ])
-
-def upper_fill_crystal():
-    """Light fill with crystal flecks."""
-    return make_tile([
-        [4,4,4,4,4,4,4,4],
-        [4,4,13,4,4,4,4,4],
-        [4,4,4,14,4,4,4,4],
-        [4,4,4,4,14,4,4,4],
-        [4,4,4,4,4,13,4,4],
-        [4,4,4,4,4,4,4,4],
-        [4,4,13,4,4,4,13,4],
-        [4,4,4,4,4,4,4,4],
-    ])
-
-def upper_half_platform():
-    """Half-height platform — upper zone, crystal rim."""
-    return make_tile([
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [T,T,T,T,T,T,T,T],
-        [14,13,14,13,14,13,14,13],
-        [2,5,4,4,4,4,5,2],
-        [2,4,3,3,3,3,4,2],
-        [2,2,2,2,2,2,2,2],
+        [M, M, M, M, M, M, M, K],
+        [D, D, D, D, D, D, D, K],
+        [D, D, D, D, D, D, D, K],
+        [K, K, K, K, K, K, K, K],
+        [M, M, M, K, M, M, M, M],
+        [D, D, D, K, D, D, D, D],
+        [D, D, D, K, D, D, D, D],
+        [K, K, K, K, K, K, K, K],
     ])
 
 # =============================================================================
@@ -469,50 +102,54 @@ def upper_half_platform():
 # =============================================================================
 
 def ladder_top():
+    T = 0; D = 11; L = 12
     return make_tile([
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [8,8,8,9,9,8,8,8],
-        [9,9,10,9,9,10,9,9],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [L,L,L,D,D,L,L,L],
+        [D,D,D,D,D,D,D,D],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
     ])
 
 def ladder_mid1():
+    T = 0; D = 11; L = 12
     return make_tile([
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [8,8,8,9,9,8,8,8],
-        [9,9,10,9,9,10,9,9],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [L,L,L,D,D,L,L,L],
+        [D,D,D,D,D,D,D,D],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
     ])
 
 def ladder_mid2():
+    T = 0; D = 11; L = 12
     return make_tile([
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [8,8,8,9,9,8,8,8],
-        [9,9,10,9,9,10,9,9],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [L,L,L,D,D,L,L,L],
+        [D,D,D,D,D,D,D,D],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
     ])
 
 def ladder_bot():
+    T = 0; D = 11; L = 12
     return make_tile([
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
-        [8,8,8,9,9,8,8,8],
-        [9,9,10,9,9,10,9,9],
-        [T,T,8,9,9,8,T,T],
-        [T,T,8,9,9,8,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
+        [L,L,L,D,D,L,L,L],
+        [D,D,D,D,D,D,D,D],
+        [T,T,L,D,D,L,T,T],
+        [T,T,L,D,D,L,T,T],
         [T,T,T,T,T,T,T,T],
     ])
 
@@ -521,43 +158,36 @@ def ladder_bot():
 # =============================================================================
 
 def pickup_charge_pack():
-    """Gold lightning bolt on transparent background — collect to gain an EMP charge."""
-    G = 15   # warm gold
-    C = 10   # bright copper
-    T = 0    # transparent
+    """Electric lightning bolt."""
+    Y = 13; W = 4; T = 0
     return make_tile([
         [T, T, T, T, T, T, T, T],
-        [T, T, G, G, G, T, T, T],
-        [T, G, G, G, T, T, T, T],
-        [G, G, C, T, T, T, T, T],
-        [T, T, C, C, C, T, T, T],
-        [T, T, T, C, C, G, T, T],
-        [T, T, T, T, G, G, G, T],
+        [T, T, Y, Y, Y, T, T, T],
+        [T, Y, Y, Y, T, T, T, T],
+        [Y, Y, W, T, T, T, T, T],
+        [T, T, W, W, W, T, T, T],
+        [T, T, T, W, W, Y, T, T],
+        [T, T, T, T, Y, Y, Y, T],
         [T, T, T, T, T, T, T, T],
     ])
 
 def pickup_memory_shard():
-    """Bright blue crystal fragment — collect 5 to activate the terminus."""
-    B = 13   # crystal blue
-    H = 14   # ice blue highlight
-    T = 0    # transparent
+    """Cyan neon diamond."""
+    C = 6; W = 4; T = 0
     return make_tile([
-        [T, T, T, H, T, T, T, T],
-        [T, T, H, B, H, T, T, T],
-        [T, H, B, H, B, H, T, T],
-        [H, B, H, H, H, B, H, T],
-        [T, H, B, H, B, H, T, T],
-        [T, T, H, B, H, T, T, T],
-        [T, T, T, H, T, T, T, T],
+        [T, T, T, W, T, T, T, T],
+        [T, T, W, C, W, T, T, T],
+        [T, W, C, W, C, W, T, T],
+        [W, C, W, W, W, C, W, T],
+        [T, W, C, W, C, W, T, T],
+        [T, T, W, C, W, T, T, T],
+        [T, T, T, W, T, T, T, T],
         [T, T, T, T, T, T, T, T],
     ])
 
 def pickup_terminus():
-    """Bright exit beacon — reach this with all 5 shards to escape."""
-    Y = 15   # warm gold outer ring
-    R = 12   # lava red inner ring
-    W = 5    # bright highlight core
-    T = 0    # transparent
+    """Glowing exit beacon."""
+    Y = 8; R = 14; W = 4; T = 0
     return make_tile([
         [T, Y, Y, Y, Y, Y, Y, T],
         [Y, R, R, R, R, R, Y, T],
@@ -573,7 +203,7 @@ def pickup_terminus():
 # Portal archway tiles 34-49 — 4×4 grid of 8×8 tiles forming a 32×32 arch
 # Placed at entrance (ground floor) and exit (top floor) as decoration.
 #
-# Palette:  T=0  W=5  Y=15  H=13  G=11  B=14  R=12
+# Palette:  W=4  Y=13  H=6  G=10  B=15  R=14  T=0
 #
 # Grid layout (tile IDs):
 #   34 35 36 37     row 0 (top of arch)
@@ -587,7 +217,7 @@ def portal_00():
     return make_tile([[T]*8]*8)
 
 def portal_01():
-    W=5; Y=15; T=0
+    W=4; Y=13; T=0
     return make_tile([
         [T,T,T,T,W,W,W,W],
         [T,T,T,T,W,W,W,W],
@@ -600,7 +230,7 @@ def portal_01():
     ])
 
 def portal_02():
-    W=5; Y=15; T=0
+    W=4; Y=13; T=0
     return make_tile([
         [W,W,W,W,T,T,T,T],
         [W,W,W,W,T,T,T,T],
@@ -617,7 +247,7 @@ def portal_03():
     return make_tile([[T]*8]*8)
 
 def portal_10():
-    W=5; H=13; G=11; B=14; T=0
+    W=4; Y=13; H=6; G=10; B=15; T=0
     return make_tile([
         [W,Y,Y,Y,W,W,W,W],
         [W,Y,Y,Y,W,W,W,W],
@@ -630,7 +260,7 @@ def portal_10():
     ])
 
 def portal_11():
-    W=5; Y=15; H=13; G=11; B=14; T=0
+    W=4; Y=13; H=6; G=10; B=15; T=0
     return make_tile([
         [W,W,W,W,Y,Y,Y,W],
         [W,W,W,W,Y,Y,Y,W],
@@ -643,7 +273,7 @@ def portal_11():
     ])
 
 def portal_12():
-    H=13; T=0
+    H=6; T=0
     return make_tile([
         [T,T,T,T,T,T,T,T],
         [T,T,T,T,T,T,T,T],
@@ -660,7 +290,7 @@ def portal_13():
     return make_tile([[T]*8]*8)
 
 def portal_20():
-    H=13; G=11; T=0
+    H=6; G=10; T=0
     return make_tile([
         [H,H,H,H,H,G,G,G],
         [H,H,H,H,H,G,G,G],
@@ -673,7 +303,7 @@ def portal_20():
     ])
 
 def portal_21():
-    G=11; B=14; T=0
+    G=10; B=15; T=0
     return make_tile([
         [G,G,B,B,B,B,G,G],
         [G,G,B,B,B,B,G,G],
@@ -686,7 +316,7 @@ def portal_21():
     ])
 
 def portal_22():
-    H=13; G=11; T=0
+    H=6; G=10; T=0
     return make_tile([
         [G,G,H,H,H,H,H,H],
         [G,G,H,H,H,H,H,H],
@@ -699,7 +329,7 @@ def portal_22():
     ])
 
 def portal_23():
-    H=13; T=0
+    H=6; T=0
     return make_tile([
         [H,T,T,T,T,T,T,T],
         [H,T,T,T,T,T,T,T],
@@ -712,7 +342,7 @@ def portal_23():
     ])
 
 def portal_30():
-    H=13; G=11; T=0
+    H=6; G=10; T=0
     return make_tile([
         [H,H,H,H,H,H,H,H],
         [H,H,H,H,H,H,H,H],
@@ -725,7 +355,7 @@ def portal_30():
     ])
 
 def portal_31():
-    H=13; G=11; B=14; R=12; T=0
+    H=6; G=10; B=15; R=14; T=0
     return make_tile([
         [H,H,H,G,G,G,G,G],
         [H,H,H,H,G,G,G,G],
@@ -738,7 +368,7 @@ def portal_31():
     ])
 
 def portal_32():
-    H=13; G=11; B=14; R=12; T=0
+    H=6; G=10; B=15; R=14; T=0
     return make_tile([
         [G,G,G,G,G,H,H,H],
         [G,G,G,G,H,H,H,H],
@@ -751,7 +381,7 @@ def portal_32():
     ])
 
 def portal_33():
-    H=13; G=11; T=0
+    H=6; G=10; T=0
     return make_tile([
         [H,H,H,H,H,H,H,H],
         [H,H,H,H,H,H,H,H],
@@ -768,41 +398,41 @@ def portal_33():
 # =============================================================================
 tiles = [solid_tile(0)] * 256  # default: transparent empty
 
-# Deep zone: tiles 1-10
-tiles[1]  = deep_basalt()
-tiles[2]  = deep_basalt_cracked()
-tiles[3]  = deep_platform_top()
-tiles[4]  = deep_fill_a()
-tiles[5]  = deep_volcanic()
-tiles[6]  = deep_ore_vein()
-tiles[7]  = deep_dense_basalt()
-tiles[8]  = deep_fill_strata()
-tiles[9]  = deep_lava_fill()
-tiles[10] = deep_half_platform()
+# 1. DEEP ZONE: Classic Brick
+tiles[1]  = t_solid()
+tiles[2]  = t_solid()
+tiles[3]  = t_platform()
+tiles[4]  = t_fill()
+tiles[5]  = t_solid()
+tiles[6]  = t_solid()
+tiles[7]  = t_solid()
+tiles[8]  = t_solid()
+tiles[9]  = t_solid()
+tiles[10] = t_solid()
 
-# Mid zone: tiles 11-20
-tiles[11] = mid_brick_a()
-tiles[12] = mid_brick_cracked()
-tiles[13] = mid_platform_top()
-tiles[14] = mid_fill_a()
-tiles[15] = mid_mossy_brick()
-tiles[16] = mid_carved()
-tiles[17] = mid_platform_mossy()
-tiles[18] = mid_fill_b()
-tiles[19] = mid_fill_c()
-tiles[20] = mid_half_platform()
+# 2. MID ZONE: Classic Brick
+tiles[11] = t_solid()
+tiles[12] = t_solid()
+tiles[13] = t_platform()
+tiles[14] = t_fill()
+tiles[15] = t_solid()
+tiles[16] = t_solid()
+tiles[17] = t_solid()
+tiles[18] = t_solid()
+tiles[19] = t_solid()
+tiles[20] = t_solid()
 
-# Upper zone: tiles 21-30
-tiles[21] = upper_carved_a()
-tiles[22] = upper_crystal_vein()
-tiles[23] = upper_platform_top()
-tiles[24] = upper_fill_a()
-tiles[25] = upper_crystal_cluster()
-tiles[26] = upper_ornate()
-tiles[27] = upper_platform_alt()
-tiles[28] = upper_fill_b()
-tiles[29] = upper_fill_crystal()
-tiles[30] = upper_half_platform()
+# 3. UPPER ZONE: Classic Brick
+tiles[21] = t_solid()
+tiles[22] = t_solid()
+tiles[23] = t_platform()
+tiles[24] = t_fill()
+tiles[25] = t_solid()
+tiles[26] = t_solid()
+tiles[27] = t_solid()
+tiles[28] = t_solid()
+tiles[29] = t_solid()
+tiles[30] = t_solid()
 
 # Pickup tiles: 31-33  (not solid — pickups only)
 tiles[31] = pickup_charge_pack()
@@ -856,4 +486,3 @@ for c in PALETTE:
 with open(os.path.join(out_root, 'FG_PAL.BIN'), 'wb') as f:
     f.write(pal_bin)
 print(f"FG_PAL.BIN: {len(pal_bin)} bytes")
-
