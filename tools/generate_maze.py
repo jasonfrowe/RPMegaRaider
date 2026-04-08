@@ -104,7 +104,7 @@ _rng = [0]
 def seed_rng(s):
     _rng[0] = s & 0xFFFF or 1
 
-def rng_next():
+def rng_next16():
     s = _rng[0]
     s ^= (s << 7) & 0xFFFF
     s ^= (s >> 9) & 0xFFFF
@@ -112,8 +112,14 @@ def rng_next():
     _rng[0] = s & 0xFFFF
     return _rng[0]
 
+def rng_next():
+    return rng_next16() & 0xFF
+
 def rng_mod(n):
     return 0 if n <= 1 else rng_next() % n
+
+def rng_mod16(n):
+    return 0 if n <= 1 else rng_next16() % n
 
 # ---------------------------------------------------------------------------
 # World arrays
@@ -193,10 +199,10 @@ def generate():
 
     # Scatter CPUs
     for _ in range(800):
-        w = 4 + rng_mod(4) * 2
-        h = 4 + rng_mod(4) * 2
-        cx = 10 + rng_mod(WORLD_W - 20 - w)
-        cy = 10 + rng_mod(WORLD_H - 20 - h)
+        w = 4 + rng_mod16(4) * 2
+        h = 4 + rng_mod16(4) * 2
+        cx = 10 + rng_mod16(WORLD_W - 20 - w)
+        cy = 10 + rng_mod16(WORLD_H - 20 - h)
         
         overlap = False
         for x in range(cx - 1, cx + w + 1):
@@ -221,19 +227,19 @@ def generate():
                 bg_set(x, y, t)
                 
                 # Spawn trace walkers from edges
-                if t in (11, 12, 13, 14) and rng_mod(3) == 0:
-                    cb = 2 if rng_mod(2) == 0 else 6
-                    if t == 11: pins.append((x, y - 1, 1 if rng_mod(2) == 0 else -1, -1, cb))
-                    elif t == 12: pins.append((x, y + 1, 1 if rng_mod(2) == 0 else -1, 1, cb))
-                    elif t == 14: pins.append((x - 1, y, -1, 1 if rng_mod(2) == 0 else -1, cb))
-                    elif t == 13: pins.append((x + 1, y, 1, 1 if rng_mod(2) == 0 else -1, cb))
+                if t in (11, 12, 13, 14) and rng_mod16(3) == 0:
+                    cb = 2 if rng_mod16(2) == 0 else 6
+                    if t == 11: pins.append((x, y - 1, 1 if rng_mod16(2) == 0 else -1, -1, cb))
+                    elif t == 12: pins.append((x, y + 1, 1 if rng_mod16(2) == 0 else -1, 1, cb))
+                    elif t == 14: pins.append((x - 1, y, -1, 1 if rng_mod16(2) == 0 else -1, cb))
+                    elif t == 13: pins.append((x + 1, y, 1, 1 if rng_mod16(2) == 0 else -1, cb))
 
     # Scatter Resistor Arrays
     for _ in range(2500):
-        is_horiz = rng_mod(2) == 0
+        is_horiz = rng_mod16(2) == 0
         w, h = (3, 1) if is_horiz else (1, 3)
-        cx = 10 + rng_mod(WORLD_W - 20 - w)
-        cy = 10 + rng_mod(WORLD_H - 20 - h)
+        cx = 10 + rng_mod16(WORLD_W - 20 - w)
+        cy = 10 + rng_mod16(WORLD_H - 20 - h)
         
         overlap = False
         for x in range(cx - 1, cx + w + 1):
@@ -244,16 +250,16 @@ def generate():
             if overlap: break
         if overlap: continue
 
-        cb = 2 if rng_mod(2) == 0 else 6
+        cb = 2 if rng_mod16(2) == 0 else 6
         for x in range(cx, cx + w):
             for y in range(cy, cy + h):
                 bg_set(x, y, 19 if is_horiz else 20)
                 if is_horiz:
-                    if x == cx: pins.append((x - 1, y, -1, 1 if rng_mod(2) == 0 else -1, cb))
-                    if x == cx + w - 1: pins.append((x + 1, y, 1, 1 if rng_mod(2) == 0 else -1, cb))
+                    if x == cx: pins.append((x - 1, y, -1, 1 if rng_mod16(2) == 0 else -1, cb))
+                    if x == cx + w - 1: pins.append((x + 1, y, 1, 1 if rng_mod16(2) == 0 else -1, cb))
                 else:
-                    if y == cy: pins.append((x, y - 1, 1 if rng_mod(2) == 0 else -1, -1, cb))
-                    if y == cy + h - 1: pins.append((x, y + 1, 1 if rng_mod(2) == 0 else -1, 1, cb))
+                    if y == cy: pins.append((x, y - 1, 1 if rng_mod16(2) == 0 else -1, -1, cb))
+                    if y == cy + h - 1: pins.append((x, y + 1, 1 if rng_mod16(2) == 0 else -1, 1, cb))
 
     # Route Diagonal Traces
     for (sx, sy, dx, dy, cb) in pins:
@@ -261,7 +267,7 @@ def generate():
         
         bg_set(sx, sy, cb + 3) # Starting VIA docks to Orthogonal Pin
         x, y = sx + dx, sy + dy
-        length = 5 + rng_mod(30)
+        length = 5 + rng_mod16(30)
         
         for step in range(length):
             if not (0 <= x < WORLD_W and 0 <= y < WORLD_H): break
@@ -275,9 +281,9 @@ def generate():
             bg_set(x, y, cb if dx == dy else cb + 1)
             
             # Random 45-degree turns using a routing VIA
-            if step > 2 and rng_mod(8) == 0:
+            if step > 2 and rng_mod16(8) == 0:
                 bg_set(x, y, cb + 3)
-                if rng_mod(2) == 0: dx = -dx
+                if rng_mod16(2) == 0: dx = -dx
                 else: dy = -dy
             
             x += dx; y += dy
@@ -292,6 +298,8 @@ def generate():
     #    floor[0] = GROUND_ROW (ground level)
     #    floor[f] for f > 0 is above floor[f-1]
     # ------------------------------------------------------------------
+    seed_rng(0xBEEF)  # Restore the exact RNG state for the classic foreground layout
+
     floor_row = [0] * NUM_FLOORS
     floor_row[0] = GROUND_ROW
 
