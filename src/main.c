@@ -9,7 +9,6 @@
 #include "hud.h"
 #include "opl.h"
 #include "sound.h"
-#include "usb_hid_keys.h"
 
 // ---------------------------------------------------------------------------
 // Graphics initialisation
@@ -108,7 +107,6 @@ static int16_t       s_cam_y     = 0;
 static game_state_t  s_game_state  = STATE_TITLE;
 static bool          s_was_won     = false;
 static bool          s_start_prev  = false;
-static bool          s_alt_f4_prev = false;
 // Delay before entering GAMEOVER on win so terminus fanfare can finish.
 // 5 notes x 6 ticks = 30, +6 buffer = 36 frames (~0.6 s at 60 Hz).
 #define WIN_FANFARE_TICKS 36u
@@ -210,18 +208,6 @@ int main(void)
         // ACTIVE SCAN: input + physics (no XRAM writes).
         // ------------------------------------------------------------------
         handle_input();
-
-        bool alt_down = (key(KEY_LEFTALT) != 0) || (key(KEY_RIGHTALT) != 0);
-        bool alt_f4_now = alt_down && (key(KEY_F4) != 0);
-        bool alt_f4_pressed = alt_f4_now && !s_alt_f4_prev;
-        s_alt_f4_prev = alt_f4_now;
-
-        if (alt_f4_pressed) {
-            hud_clear();
-            opl_silence_all();
-            stream_close_files();
-            return 0;
-        }
 
         bool start_now = is_action_pressed(0, ACTION_PAUSE);
         bool start_pressed = start_now && !s_start_prev;
